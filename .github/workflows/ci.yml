@@ -21,9 +21,9 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node: ['22', '24']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
 
@@ -40,11 +40,11 @@ jobs:
     name: merkle vectors reproduce
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -61,8 +61,8 @@ jobs:
     name: end-to-end hook run
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
 
@@ -93,17 +93,31 @@ jobs:
           node "$bin" log
           node "$bin" verify
 
-          # tampering must be detected
+          # tampering must be detected: flip the recorded denial into an allow
           events=$(find "$PROVENANT_HOME/sessions" -name events.jsonl | head -1)
           node -e '
-            const fs=require("fs"), f=process.argv[1];
-            const L=fs.readFileSync(f,"utf8").trim().split("\n");
-            const e=JSON.parse(L[3]);
-            const b=JSON.parse(Buffer.from(e.payload,"base64").toString());
-            b.decision && (b.decision.effect="allow");
-            e.payload=Buffer.from(JSON.stringify(b)).toString("base64");
-            L[3]=JSON.stringify(e);
-            fs.writeFileSync(f,L.join("\n")+"\n");
+            const fs = require("fs");
+            const f = process.argv[1];
+            const lines = fs.readFileSync(f, "utf8").trim().split("\n");
+
+            // Find the denial by content: event order depends on which hooks ran.
+            const i = lines.findIndex((l) => {
+              const b = JSON.parse(Buffer.from(JSON.parse(l).payload, "base64").toString());
+              return b.type === "tool.denied";
+            });
+            if (i === -1) { console.error("no tool.denied event to tamper with"); process.exit(1); }
+
+            const envelope = JSON.parse(lines[i]);
+            const before = envelope.payload;
+            const body = JSON.parse(Buffer.from(before, "base64").toString());
+            body.type = "tool.intent";
+            body.decision.effect = "allow";
+            envelope.payload = Buffer.from(JSON.stringify(body)).toString("base64");
+            if (envelope.payload === before) { console.error("tamper was a no-op"); process.exit(1); }
+
+            lines[i] = JSON.stringify(envelope);
+            fs.writeFileSync(f, lines.join("\n") + "\n");
+            console.log(`tampered with event ${i}: tool.denied/deny -> tool.intent/allow`);
           ' "$events"
 
           if node "$bin" verify; then echo "tampering was NOT detected"; exit 1; fi
