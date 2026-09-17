@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Path handling and file locking differ per platform, and those are
+        # exactly the parts of the store that can break.
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Check for runtime dependencies
+        shell: bash
+        run: |
+          # Provenant must stay dependency-free: see CONTRIBUTING.md.
+          deps=$(node -e "const p=require('./package.json');console.log(Object.keys(p.dependencies||{}).length)")
+          if [ "$deps" != "0" ]; then echo "runtime dependencies are not allowed (found $deps)"; exit 1; fi
+
+      - run: node --test
+
+  vectors:
+    name: merkle vectors reproduce
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Regenerate vectors and diff
+        run: |
+          # The committed vectors must match what the independent Python
+          # implementation produces, or one of the two has drifted.
+          python scripts/gen_vectors.py > /tmp/merkle.json
+          diff -u spec/vectors/merkle.json /tmp/merkle.json
+
+      - run: node --test test/merkle.test.js
+
+  smoke:
+    name: end-to-end hook run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: init, drive hooks, verify, then tamper
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PROVENANT_HOME="$RUNNER_TEMP/prov-home"
+          mkdir -p "$RUNNER_TEMP/repo" && cd "$RUNNER_TEMP/repo"
+          bin="$GITHUB_WORKSPACE/bin/provenant.js"
+
+          node "$bin" init
+          sid='{"session_id":"ci","cwd":"'$PWD'"'
+
+          echo "$sid}" | node "$bin" hook claude session-start
+          echo "$sid,\"tool_name\":\"WebFetch\",\"tool_input\":{\"url\":\"https://example.com\"}}" | node "$bin" hook claude pre-tool
+          echo "$sid,\"tool_name\":\"WebFetch\",\"tool_input\":{\"url\":\"https://example.com\"},\"tool_response\":{\"success\":true,\"content\":\"x\"}}" | node "$bin" hook claude post-tool
+
+          # a credential read must be denied
+          out=$(echo "$sid,\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"$PWD/.env\"}}" | node "$bin" hook claude pre-tool)
+          echo "$out" | grep -q '"permissionDecision":"deny"' || { echo "expected deny, got: $out"; exit 1; }
+
+          # a protected push in a tainted session must ask
+          out=$(echo "$sid,\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push origin main\"}}" | node "$bin" hook claude pre-tool)
+          echo "$out" | grep -q '"permissionDecision":"ask"' || { echo "expected ask, got: $out"; exit 1; }
+
+          echo "$sid}" | node "$bin" hook claude stop
+          node "$bin" log
+          node "$bin" verify
+
+          # tampering must be detected
+          events=$(find "$PROVENANT_HOME/sessions" -name events.jsonl | head -1)
+          node -e '
+            const fs=require("fs"), f=process.argv[1];
+            const L=fs.readFileSync(f,"utf8").trim().split("\n");
+            const e=JSON.parse(L[3]);
+            const b=JSON.parse(Buffer.from(e.payload,"base64").toString());
+            b.decision && (b.decision.effect="allow");
+            e.payload=Buffer.from(JSON.stringify(b)).toString("base64");
+            L[3]=JSON.stringify(e);
+            fs.writeFileSync(f,L.join("\n")+"\n");
+          ' "$events"
+
+          if node "$bin" verify; then echo "tampering was NOT detected"; exit 1; fi
+          echo "tampering detected as expected"

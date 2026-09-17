@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "provenant hook claude session-start" }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "provenant hook claude prompt" }] }
+    ],
+    "PreToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "provenant hook claude pre-tool" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "provenant hook claude post-tool" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "provenant hook claude stop" }] }
+    ]
+  }
+}

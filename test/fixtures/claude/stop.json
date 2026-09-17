@@ -1,0 +1,6 @@
+{
+  "session_id": "fixture-session-001",
+  "cwd": "/work/repo",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false
+}

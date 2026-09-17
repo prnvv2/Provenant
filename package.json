@@ -1,0 +1,42 @@
+{
+  "name": "provenant",
+  "version": "0.1.0",
+  "description": "Policy gate and tamper-evident lineage log for AI coding agents",
+  "type": "module",
+  "license": "Apache-2.0",
+  "bin": {
+    "provenant": "bin/provenant.js"
+  },
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "test": "node --test",
+    "bench": "node scripts/bench.js",
+    "vectors": "python scripts/gen_vectors.py > spec/vectors/merkle.json"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "policies/",
+    "adapters/",
+    "spec/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "agent",
+    "security",
+    "policy",
+    "merkle",
+    "transparency-log",
+    "claude-code",
+    "nhi",
+    "provenance"
+  ],
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -1,0 +1,7 @@
+{
+  "session_id": "fixture-session-001",
+  "cwd": "/work/repo",
+  "hook_event_name": "SessionStart",
+  "source": "startup",
+  "model": { "id": "claude-opus-5", "display_name": "Opus 5" }
+}

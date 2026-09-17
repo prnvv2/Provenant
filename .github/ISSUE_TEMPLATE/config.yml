@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/prnvv2/provenant/security/advisories/new
+    about: Report privately. Please do not open a public issue for a security problem.

@@ -1,0 +1,8 @@
+{
+  "session_id": "fixture-session-001",
+  "cwd": "/work/repo",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Read",
+  "tool_input": { "file_path": "/work/repo/src/auth.rs" },
+  "tool_response": { "success": true, "content": "fn authenticate() {}" }
+}

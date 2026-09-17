@@ -1,0 +1,107 @@
+{
+  "name": "provenant-default",
+  "version": 1,
+  "description": "Baseline policy: block credential access and writes outside the workspace; require approval for risky actions once the session has read untrusted content.",
+  "defaultEffect": "ask",
+  "rules": [
+    {
+      "id": "deny-secret-read",
+      "effect": "deny",
+      "classes": ["secret.read"],
+      "reason": "Credential files are off limits. Use a credential broker or pass the value in the prompt."
+    },
+    {
+      "id": "deny-policy-edit",
+      "effect": "deny",
+      "classes": ["edit.policy"],
+      "reason": "An agent may not edit its own policy or the Provenant store."
+    },
+    {
+      "id": "deny-edit-outside-workspace",
+      "effect": "deny",
+      "classes": ["edit.outside"],
+      "reason": "Writes outside the workspace are not allowed."
+    },
+    {
+      "id": "ask-destructive",
+      "effect": "ask",
+      "classes": ["exec.destructive"],
+      "reason": "This command deletes or overwrites data irreversibly."
+    },
+    {
+      "id": "ask-deploy",
+      "effect": "ask",
+      "classes": ["deploy"],
+      "reason": "Infrastructure changes need a human decision."
+    },
+    {
+      "id": "ask-protected-push",
+      "effect": "ask",
+      "classes": ["git.push.protected"],
+      "reason": "Pushing to a protected branch or force-pushing needs a human decision."
+    },
+    {
+      "id": "ask-egress-when-tainted",
+      "effect": "ask",
+      "classes": ["net.egress"],
+      "whenTaintAtOrBelow": "external",
+      "reason": "This session has read untrusted content, so outbound network access needs approval."
+    },
+    {
+      "id": "ask-push-when-tainted",
+      "effect": "ask",
+      "classes": ["git.push", "git.commit"],
+      "whenTaintAtOrBelow": "external",
+      "reason": "This session has read untrusted content, so publishing code needs approval."
+    },
+    {
+      "id": "ask-exec-when-tainted",
+      "effect": "ask",
+      "classes": ["exec"],
+      "whenTaintAtOrBelow": "external",
+      "reason": "This session has read untrusted content, so arbitrary shell commands need approval."
+    },
+    {
+      "id": "allow-egress",
+      "effect": "allow",
+      "classes": ["net.egress"],
+      "reason": "Network access is allowed while the session is untainted."
+    },
+    {
+      "id": "allow-read",
+      "effect": "allow",
+      "classes": ["read"],
+      "reason": "Reading inside the workspace is allowed."
+    },
+    {
+      "id": "allow-edit",
+      "effect": "allow",
+      "classes": ["edit"],
+      "reason": "Editing inside the workspace is allowed."
+    },
+    {
+      "id": "allow-tests",
+      "effect": "allow",
+      "classes": ["exec.test"],
+      "reason": "Recognised build and test commands are allowed."
+    },
+    {
+      "id": "allow-exec",
+      "effect": "allow",
+      "classes": ["exec"],
+      "reason": "Shell commands are allowed while the session is untainted."
+    },
+    {
+      "id": "allow-git-write",
+      "effect": "allow",
+      "classes": ["git.commit", "git.push"],
+      "reason": "Commits and non-protected pushes are allowed while the session is untainted."
+    },
+    {
+      "id": "allow-delegate",
+      "effect": "allow",
+      "classes": ["delegate", "mcp"],
+      "reason": "Subagents and MCP tools are recorded; their own tool calls are gated individually."
+    }
+  ]
+}

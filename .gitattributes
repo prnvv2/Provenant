@@ -1,0 +1,5 @@
+# Keep everything LF in the repository: the CI smoke test runs shell scripts and
+# the test fixtures are byte-compared.
+* text=auto eol=lf
+*.png binary
+*.jpg binary

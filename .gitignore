@@ -1,0 +1,21 @@
+# dependencies (there should be none, but never commit a tree)
+node_modules/
+package-lock.json
+
+# local Provenant state, in case someone points PROVENANT_HOME at the repo
+.provenant/
+*.jsonl.bak
+*.provenant-backup
+
+# harness settings written by `provenant init` in this repo
+.claude/settings.local.json
+
+# editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# scratch
+tmp/
+*.log

@@ -1,0 +1,6 @@
+{
+  "session_id": "fixture-session-001",
+  "cwd": "/work/repo",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "read the issue at https://example.com/issues/42 and fix the bug"
+}
