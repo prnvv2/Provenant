@@ -9,6 +9,7 @@
 import { digestRef } from './core/hash.js';
 import { canonicalBytes } from './core/canonical.js';
 import { buildEvent } from './core/event.js';
+import { redactWithFlag } from './core/redact.js';
 import { classify } from './policy/classify.js';
 import { decide, loadPolicy, lowerTaint } from './policy/engine.js';
 import { appendEvent, loadSession, writeCheckpoint } from './store/store.js';
@@ -83,6 +84,9 @@ export function gateToolCall({
   const classification = classify({ tool, input, cwd });
   const decision = decide({ policy, classification, taint: state.taint });
 
+  // Policy sees the raw command; only what gets recorded is redacted.
+  const { resource, redacted } = resourceFor(classification.resource);
+
   const record = appendEvent(
     session,
     (s) =>
@@ -95,7 +99,8 @@ export function gateToolCall({
         action: {
           class: classification.class,
           tool,
-          resource: truncate(classification.resource, 400),
+          resource,
+          ...(redacted ? { redacted: true } : {}),
         },
         input: digestRef(canonicalBytes(input ?? {})),
         decision: {
@@ -157,7 +162,7 @@ export function recordOutcome({
         action: {
           class: classification.class,
           tool,
-          resource: truncate(classification.resource, 400),
+          ...resourceAction(classification.resource),
         },
         outcome: {
           ok: Boolean(ok),
@@ -180,7 +185,11 @@ export function recordOutcome({
         seq: state.seq,
         parent: state.parent,
         taint: state.taint,
-        action: { class: classification.class, tool, resource: truncate(classification.taintSource ?? classification.resource, 400) },
+        action: {
+          class: classification.class,
+          tool,
+          ...resourceAction(classification.taintSource ?? classification.resource),
+        },
         context: { label: 'external', source: tool },
       }),
     );
@@ -229,7 +238,22 @@ export function endSession({ harnessSessionId, harness = 'unknown', cwd = proces
   return { session, checkpoint };
 }
 
-function truncate(s, n) {
-  const str = String(s ?? '');
-  return str.length <= n ? str : `${str.slice(0, n)}…`;
+/**
+ * Prepare a resource string for recording: redact secret-looking material, then
+ * bound its length. Redaction happens first so a truncated token is not stored.
+ *
+ * @param {unknown} s
+ * @param {number} [n]
+ * @returns {{resource: string, redacted: boolean}}
+ */
+function resourceFor(s, n = 400) {
+  const { value, redacted } = redactWithFlag(s);
+  const resource = value.length <= n ? value : `${value.slice(0, n)}…`;
+  return { resource, redacted };
+}
+
+/** The `resource` (and `redacted` flag) fields of an action, ready to spread. */
+function resourceAction(s) {
+  const { resource, redacted } = resourceFor(s);
+  return redacted ? { resource, redacted: true } : { resource };
 }

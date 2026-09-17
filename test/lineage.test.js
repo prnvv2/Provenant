@@ -262,3 +262,46 @@ test('parallel appends to one session keep sequence numbers unique', async () =>
   assert.deepEqual(seqs, [...Array(seqs.length).keys()]);
   assert.equal(verifySession(session).ok, true);
 });
+
+test('secrets on a command line never reach disk', () => {
+  const sid = 'secret-hygiene';
+  const common = { harnessSessionId: sid, harness: 'claude-code', cwd: CWD };
+  startSession(common);
+
+  // Assembled at runtime so no scanner-matchable token literal sits in the repo.
+  const join = (...parts) => parts.join('');
+  const secrets = [
+    join('sk-', 'ant-', 'api03-DoNotLogThisValue999'),
+    join('ghp', '_AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH12'),
+    'SuperSecret123!',
+  ];
+
+  gateToolCall({ ...common, tool: 'Bash', input: { command: `curl -H 'Authorization: Bearer ${secrets[0]}' https://api.example.com` } });
+  gateToolCall({ ...common, tool: 'Bash', input: { command: `git clone https://me:${secrets[1]}@github.com/acme/api` } });
+  gateToolCall({ ...common, tool: 'Bash', input: { command: `psql --password=${secrets[2]} -h db.internal` } });
+  recordOutcome({ ...common, tool: 'WebFetch', input: { url: `https://api.example.com/x?access_token=${secrets[0]}` }, output: 'ok' });
+  const { session } = endSession(common);
+
+  // Scan the entire store, decoding payloads: base64 is not protection.
+  const files = [paths.events(session), paths.state(session), paths.checkpoint(session)];
+  const haystack = files
+    .map((f) => readFileSync(f, 'utf8'))
+    .concat(
+      readEnvelopes(session).map((e) => JSON.stringify(decodePayload(e))),
+    )
+    .join('\n');
+
+  for (const secret of secrets) {
+    assert.equal(haystack.includes(secret), false, `secret reached disk: ${secret}`);
+  }
+  assert.match(haystack, /\[redacted:/, 'nothing was marked as redacted');
+
+  // The command shape survives, so the log is still auditable, and the event
+  // says its resource is not verbatim.
+  const bodies = readEnvelopes(session).map(decodePayload);
+  const curl = bodies.find((b) => b.action?.resource?.startsWith('curl'));
+  assert.ok(curl.action.resource.includes('https://api.example.com'));
+  assert.equal(curl.action.redacted, true);
+
+  assert.equal(verifySession(session).ok, true);
+});

@@ -28,6 +28,8 @@ npm run vectors                    # regenerate Merkle vectors (needs python3)
 
 **Fail closed.** If the gate cannot decide, mutating actions must be blocked. Any new code path on the decision route needs a test proving it does not fail open — see `test/adapter.test.js` for the pattern.
 
+**Never commit a realistic secret, even a fake one.** Test fixtures that look like real tokens are blocked by GitHub push protection and by contributors' own scanners — this happened to `test/redact.test.js` once. Assemble sample secrets at runtime from fragments, as that file now does; the pattern under test is identical and the repository stays pushable.
+
 **Never log content.** Events carry digests, classes and decisions. Tool inputs, file contents, prompts and outputs must not be written to the log. `test/lineage.test.js` asserts this; keep it true.
 
 **Don't change the event format casually.** The leaf hash is computed over canonical bytes, so any change to `buildEvent`, the canonicaliser or the envelope invalidates existing logs. Such a change needs an ADR, a `v` field bump and a note in `CHANGELOG.md`.

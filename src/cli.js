@@ -20,6 +20,7 @@ import {
   writeCheckpoint,
 } from './store/store.js';
 import { decodePayload } from './core/dsse.js';
+import { redact } from './core/redact.js';
 import { loadPolicy, evaluate, bundledPolicyPath } from './policy/engine.js';
 import { classify } from './policy/classify.js';
 import * as claude from './adapters/claude.js';
@@ -389,14 +390,17 @@ function cmdExplain(flags, io) {
     resource: classification.resource,
   });
 
-  const data = { classification, taint, decision };
+  // Show what would be recorded, not the raw string: `explain` output gets
+  // pasted into bug reports.
+  const shown = redact(classification.resource);
+  const data = { classification: { ...classification, resource: shown }, taint, decision };
   if (flags.json) {
     io.out(JSON.stringify(data, null, 2));
     return 0;
   }
   io.out(`tool       ${flags.tool}`);
   io.out(`class      ${classification.class}`);
-  io.out(`resource   ${trim(classification.resource, 70)}`);
+  io.out(`resource   ${trim(shown, 70)}`);
   io.out(`why        ${classification.reasons.join('; ')}`);
   io.out(`taint      ${taint}`);
   io.out(`decision   ${decision.effect}  (rule ${decision.policy})`);

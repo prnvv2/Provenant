@@ -9,6 +9,7 @@ export { pae, signEnvelope, verifyEnvelope, decodePayload } from './core/dsse.js
 export { ulid, sessionId, machineId } from './core/ids.js';
 export { generateKeypair, signerFromPem, verifierFromRaw, verifierFromB64, keyidFor } from './core/keys.js';
 export { buildEvent, sealEvent, envelopeLeaf, EVENT_TYPES, PAYLOAD_TYPE } from './core/event.js';
+export { redact, redactWithFlag, REDACTION_RULES } from './core/redact.js';
 
 export {
   treeRoot,

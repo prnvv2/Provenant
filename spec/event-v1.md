@@ -60,6 +60,12 @@ Rules:
 - No field carries content. `input`, `outcome.output` and every `context` digest
   are hashes. `action.resource` carries the command or path, which is the one
   human-readable field and is what an auditor reads.
+- `action.resource` is **redacted** before it is recorded: credential flags, URL
+  userinfo, sensitive query parameters, known token prefixes, JWTs and PEM
+  blocks become `[redacted:<kind>]`. When anything was replaced, the action
+  carries `"redacted": true`, so a reader never mistakes the value for
+  verbatim. A producer may redact more; a verifier must not assume the resource
+  is the exact bytes that ran.
 - `decision.bundle` is the digest of the policy that produced the decision, so a
   verifier can tell which rules were in force.
 - Unknown fields must be preserved byte-for-byte when re-serialising, because the

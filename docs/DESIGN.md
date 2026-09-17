@@ -825,6 +825,3 @@ Target: **< 5 minutes** from install to first protected session.
 - FIPS 204 (ML-DSA)
 - Prompt-injection containment research: CaMeL (Google DeepMind, 2025); FIDES (Microsoft Research, 2025)
 
-Design documents:
-- Blueprint v1: https://claude.ai/artifact/9LCcmoguEhJVNQqRAyTEUv
-- Reference design rev 2: https://claude.ai/artifact/XRJcyHo8G8cgc943fd5MTR
