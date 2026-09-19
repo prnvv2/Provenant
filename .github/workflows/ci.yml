@@ -122,3 +122,39 @@ jobs:
 
           if node "$bin" verify; then echo "tampering was NOT detected"; exit 1; fi
           echo "tampering detected as expected"
+
+      - name: codex and opencode — ask must block, never pass through
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PROVENANT_HOME="$RUNNER_TEMP/prov-home-2"
+          mkdir -p "$RUNNER_TEMP/repo2" && cd "$RUNNER_TEMP/repo2"
+          bin="$GITHUB_WORKSPACE/bin/provenant.js"
+          node "$bin" init --harness codex,opencode
+          test -f .codex/hooks.json
+          test -f .opencode/plugins/provenant.js
+
+          s='{"session_id":"ci-codex","cwd":"'$PWD'"'
+          # allowed: Codex hears nothing
+          out=$(echo "$s,\"tool_name\":\"exec_command\",\"tool_input\":{\"cmd\":[\"bash\",\"-lc\",\"npm test\"]}}" | node "$bin" hook codex pre-tool)
+          [ -z "$out" ] || { echo "expected silence for an allowed action, got: $out"; exit 1; }
+
+          # ask: Codex would run a returned "ask", so it must arrive as deny + approval id
+          out=$(echo "$s,\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push origin main\"}}" | node "$bin" hook codex pre-tool)
+          echo "$out" | grep -q '"permissionDecision":"deny"' || { echo "ask did not block: $out"; exit 1; }
+          echo "$out" | grep -qE 'provenant approve apr-[0-9a-f]{10}' || { echo "no approval id: $out"; exit 1; }
+
+          # the agent approving itself is refused
+          out=$(echo "$s,\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"provenant approve apr-0000000000\"}}" | node "$bin" hook codex pre-tool)
+          echo "$out" | grep -q 'edit.policy' || { echo "self-approval not blocked: $out"; exit 1; }
+
+          # approving without a terminal is refused
+          if echo x | node "$bin" approve apr-0000000000; then echo "approve ran without a TTY"; exit 1; fi
+
+          # opencode wire format
+          out=$(echo '{"session_id":"ci-oc","cwd":"'$PWD'","tool_name":"read","tool_input":{"filePath":"'$PWD'/.env"}}' | node "$bin" hook opencode pre-tool)
+          echo "$out" | grep -q '"decision":"deny"' || { echo "opencode deny failed: $out"; exit 1; }
+
+          echo '{"session_id":"ci-codex","cwd":"'$PWD'"}' | node "$bin" hook codex stop
+          node "$bin" verify
+          echo "codex and opencode paths behave"

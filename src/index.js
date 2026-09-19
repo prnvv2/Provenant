@@ -20,7 +20,17 @@ export {
   splitPoint,
 } from './merkle/tree.js';
 
-export { classify, classifyShell, isSecretPath, isInside, CLASSES } from './policy/classify.js';
+export {
+  classify,
+  classifyShell,
+  classifyPatch,
+  patchTargets,
+  canonicalTool,
+  isSecretPath,
+  isPolicyPath,
+  isInside,
+  CLASSES,
+} from './policy/classify.js';
 export {
   loadPolicy,
   validatePolicy,
@@ -52,7 +62,14 @@ export {
   recordOutcome,
   recordPrompt,
   endSession,
+  checkpointSession,
+  approveAction,
+  listApprovals,
+  approvalIdFor,
+  APPROVAL_TTL_MS,
 } from './gate.js';
 
 export * as claudeAdapter from './adapters/claude.js';
+export * as codexAdapter from './adapters/codex.js';
+export * as opencodeAdapter from './adapters/opencode.js';
 export { main as cli, VERSION } from './cli.js';

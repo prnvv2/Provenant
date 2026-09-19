@@ -24,6 +24,8 @@ Provenant is pre-1.0 and has not been externally audited.
 - Reading secret material out of the store, log or `provenant` output: private keys, tool inputs, file contents, tokens.
 - A credential shape that survives redaction into a recorded event — for example a token form the pattern list misses, or an encoding that evades it. Send the command line (with the secret replaced by an obviously fake value of the same shape).
 - Privilege escalation through `provenant init`, such as the settings-file merge writing somewhere unintended.
+- An agent obtaining an approval it should not have: approving its own request, reusing an approval for a different or repeated action, using one after it expires, or disabling the guard by writing any harness's hook configuration.
+- A Codex or OpenCode path where an action Provenant denies or escalates still runs.
 
 ### Known limitations, not vulnerabilities
 
@@ -31,6 +33,7 @@ These are documented design limits of v0.1 (see the README and `docs/adr/0003-ke
 
 - The agent runs as the same OS user as Provenant, so it can read `~/.provenant`, including the machine key and session keys. v0.1 **detects** tampering rather than preventing it; detection is reliable only against a checkpoint root kept where the agent cannot write. Isolation arrives with the v0.2 daemon.
 - Actions taken outside the harness's hooks are not gated.
+- An `approval` event is signed by the session key, not a human key: it proves an approval sat between the ask and the action and did not come from the agent's shell, not which person gave it. The interactive-terminal requirement is a practical barrier; an agent with arbitrary code execution as the same user could allocate a pseudo-terminal. Both close with the daemon and passkey approvals.
 - `ask` decisions rely on the harness's own prompt and are not cryptographically bound to the action; passkey approvals are v0.3.
 - The shell classifier is a tokeniser, not a shell. A *specific* misclassification is in scope and valuable; "a tokeniser is not a parser" is a known limitation.
 - Root-compromised hosts are out of scope.

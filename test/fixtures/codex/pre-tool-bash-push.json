@@ -1,0 +1,11 @@
+{
+  "session_id": "codex-session-001",
+  "cwd": "/work/repo",
+  "hook_event_name": "PreToolUse",
+  "model": "gpt-5-codex",
+  "turn_id": "turn-3",
+  "permission_mode": "default",
+  "tool_name": "Bash",
+  "tool_use_id": "call_abc123",
+  "tool_input": { "command": "git push origin main" }
+}

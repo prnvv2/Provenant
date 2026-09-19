@@ -4,14 +4,15 @@
 
 ### Your coding agent runs as you. Provenant makes it prove what it did.
 
-A **policy gate** and **tamper-evident lineage log** for AI coding agents.
+A **policy gate** and **tamper-evident lineage log** for AI coding agents — **Claude Code, Codex and OpenCode**.
 It decides before the agent acts, drops its trust once it reads the internet, and signs a record you can verify offline.
 
 [![CI](https://github.com/prnvv2/Provenant/actions/workflows/ci.yml/badge.svg)](https://github.com/prnvv2/Provenant/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522-5FA04E.svg)](package.json)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
-[![Tests](https://img.shields.io/badge/tests-84-brightgreen.svg)](test/)
+[![Tests](https://img.shields.io/badge/tests-119-brightgreen.svg)](test/)
+[![Agents](https://img.shields.io/badge/agents-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20OpenCode-8A63D2.svg)](#install)
 
 </div>
 
@@ -81,22 +82,36 @@ Three independent checks fail, and they point at the exact event.
 Node.js ≥ 22. No compiler, no native modules, **zero dependencies**.
 
 ```bash
-npx provenant init          # once published to npm
-```
-```bash
 git clone https://github.com/prnvv2/Provenant && cd Provenant
-npm link && provenant init
+npm link                                   # puts `provenant` on your PATH
 ```
 
-`init` creates `~/.provenant`, installs the default policy, and wires Claude Code hooks into `.claude/settings.json` for the current repo (`--global` for all repos). Your existing settings are backed up first.
+Then, in each repo you work in, wire up the agents you use:
 
-Then use Claude Code normally. Provenant stays invisible until it blocks or asks.
+```bash
+provenant init --harness claude-code       # .claude/settings.json
+provenant init --harness codex             # .codex/hooks.json
+provenant init --harness opencode          # .opencode/plugins/provenant.js
+provenant init --harness all               # all three
+provenant doctor                           # check what's wired
+```
 
-> **Status: v0.1.** Claude Code only, local only, no server. Honest about its edges — read [Limitations](#limitations) before you rely on it.
+Add `--global` to protect every repo instead. Existing config is backed up before anything is merged in, and your own hooks are kept.
+
+| Agent | How Provenant plugs in | When it needs you |
+|---|---|---|
+| **Claude Code** | hook commands | Claude Code's own permission prompt |
+| **Codex** | hook commands | blocks with an id → you run `provenant approve <id>` |
+| **OpenCode** | generated plugin | blocks with an id → you run `provenant approve <id>` |
+
+Then use your agent normally. Provenant stays invisible until it blocks or asks. Per-agent details: [Claude Code](adapters/claude-code/README.md) · [Codex](adapters/codex/README.md) · [OpenCode](adapters/opencode/README.md).
+
+> **Status: v0.2.** Local only, no server. Honest about its edges — read [Limitations](#limitations) before you rely on it.
 
 ## Commands
 
 ```bash
+provenant approve           # actions waiting for you;  `provenant approve <id>` to approve one
 provenant status            # identity, policy, current session, taint, decision counts
 provenant log              # readable lineage  (--session all, --json, --limit N)
 provenant verify           # signatures + chain + checkpoint + proofs  (--root <hex>)
@@ -122,7 +137,7 @@ Policies target **action classes**, not tool names, so one policy will govern ot
 | `deploy` | `kubectl apply`, `terraform apply`, cloud CLIs | ❓ ask | ❓ ask |
 | `exec.destructive` | `rm -rf`, `git reset --hard`, `dd` | ❓ ask | ❓ ask |
 | `edit.outside` | writes outside the workspace | ⛔ deny | ⛔ deny |
-| `edit.policy` | writes to `.provenant/`, `.claude/settings.json` | ⛔ deny | ⛔ deny |
+| `edit.policy` | agent hook config, `.provenant/`, `provenant approve` | ⛔ deny | ⛔ deny |
 | `secret.read` | `.env`, `~/.ssh`, `*.pem`, `credentials.json` | ⛔ deny | ⛔ deny |
 
 **Composition doesn't hide intent.** A command line is classified by its *most dangerous* part:
@@ -149,6 +164,28 @@ sudo rm -rf /var                     →  exec.destructive (not "sudo")
 ```
 
 Conditions: `classes`, `whenTaintAtOrBelow`, `whenTaintAbove`, `resourceMatches`, `resourceNotMatches`. Effects: `allow`, `ask`, `deny`. A malformed policy **throws** — it never silently widens permissions. The policy digest is recorded in every event, so a log says which rules were in force.
+
+## When the agent needs you
+
+Claude Code can pause mid-action and ask you, so Provenant hands `ask` to its prompt. Codex and OpenCode can't: Codex treats `ask` as a failed hook and **runs the action anyway**, and OpenCode's hook can only block. Mapping `ask` onto them naively would fail open. So there, Provenant blocks and hands you an id:
+
+```console
+# the agent sees:
+Provenant: this action needs human approval [git.push.protected] … run
+`provenant approve apr-4aca31fde9` in their own terminal, then retry exactly the same action.
+
+# you, in your own terminal:
+$ provenant approve apr-4aca31fde9
+Approve this action?
+  class     git.push.protected
+  action    git push origin main
+Type the id (apr-4aca31fde9) to approve, anything else to cancel: apr-4aca31fde9
+✓ approved apr-4aca31fde9 — the agent can retry now
+```
+
+An approval covers **that exact command, once, for 10 minutes**. The log records the ask, the approval citing it, and the action citing the approval, so the chain verifies.
+
+**The agent can't approve itself.** `provenant approve` run through its shell is denied as a policy edit, and approval refuses to run without an interactive terminal, which agent shells never have. Editing any agent's hook config (`.claude/settings.json`, `.codex/hooks.json`, `.opencode/plugins/`, `opencode.json`) is denied too, by tool, by patch or by shell redirect, so it can't switch the guard off either.
 
 ## What gets written down
 
@@ -202,9 +239,9 @@ v0.1 is small on purpose. What it does *not* do:
 
 - 🔓 **It detects log tampering; it does not prevent it.** The CLI runs as your user, so the agent can reach the key and the files. Detection is only reliable against a root kept where the agent cannot write — `provenant checkpoint` appends every root to `~/.provenant/checkpoints/roots.jsonl`; copy that off the machine or into CI. Real isolation needs the v0.2 daemon running as a separate user. ([ADR-0003](docs/adr/0003-key-custody-v01.md))
 - 👁 **Only what the hooks see.** A process spawned outside the harness is not gated.
-- 🤖 **Claude Code only.** OpenCode and Codex are v0.2.
+- 🧪 **Codex and OpenCode adapters haven't been run against live installs yet.** They're built from each tool's published docs and tested with recorded payloads, and the OpenCode plugin runs end to end under Node. The first real-world mismatch should become a test fixture — please report it.
 - 🎣 **It does not detect prompt injection.** It limits what a session may do after reading untrusted content.
-- ✍️ **`ask` uses the harness prompt**, so an approval is not cryptographically bound to the action. Passkey approvals are v0.3.
+- ✍️ **Approvals prove the chain, not the person.** An approval is tied to one exact action and can't come from the agent's shell, but it's signed by the session key, not by you. Passkey-signed approvals are v0.3.
 - 🐚 **The shell classifier is a tokeniser, not a shell.** Deliberately pessimistic, but a creative command line can slip past — [report it](https://github.com/prnvv2/Provenant/issues/new?template=classifier-bug.md), that's the most useful contribution right now.
 
 ## Performance
@@ -216,12 +253,12 @@ v0.1 is small on purpose. What it does *not* do:
 | Gate in process — classify, decide, sign, append | **3.6 ms** | 7.4 ms |
 | Full hook, as Claude Code spawns it | 84 ms | 123 ms |
 
-The gap is Node's process start (~80 ms here), paid once per tool call. That's the cost of v0.1 having no daemon, and the reason v0.2 moves the hook client to a compiled binary. Measure on your own machine before deciding it's acceptable.
+The gap is Node's process start (~80 ms here), paid once per tool call. The OpenCode plugin pays it too, because it runs Provenant as a subprocess. That's the cost of v0.1 having no daemon, and the reason v0.2 moves the hook client to a compiled binary. Measure on your own machine before deciding it's acceptable.
 
 ## Development
 
 ```bash
-node --test          # 84 tests, no install step
+node --test          # 119 tests, no install step
 npm run bench        # latency
 npm run vectors      # regenerate Merkle vectors from the Python reference
 ```
@@ -234,7 +271,7 @@ src/merkle/    RFC 6962 tree: root, inclusion and consistency proofs
 src/policy/    action classifier, rules engine, taint lattice
 src/store/     append-only JSONL, session state, checkpoints, verification
 src/gate.js    classify → decide → record: the only place decisions happen
-src/adapters/  harness adapters (claude.js today)
+src/adapters/  claude.js, codex.js, opencode.js (+ the generated plugin)
 ```
 
 📎 [**Spec**](spec/event-v1.md) — event format, hashing, verification rules, so another implementation can read these logs
@@ -246,11 +283,12 @@ src/adapters/  harness adapters (claude.js today)
 
 | | |
 |---|---|
-| **v0.1** ← you are here | Claude Code gate, taint, signed Merkle log, verification, redaction |
-| **v0.2** | Daemon with OS-user isolation, compiled hook client, OpenCode + Codex, context ledger |
-| **v0.3** | Shared anchor log, independent witnesses, human grants, passkey approvals, `verify-pr` CI gate |
-| **v0.4** | Key rotation with pre-rotation, revocation, credential broker for short-lived scoped tokens |
-| **v0.5** | Cross-agent receipts, A2A agent cards, federation |
+| v0.1 | Claude Code gate, taint, signed Merkle log, verification, redaction |
+| **v0.2** ← you are here | **Codex and OpenCode**, one-shot human approvals, guard self-protection |
+| v0.3 | Daemon with OS-user isolation, compiled hook client, context ledger |
+| v0.4 | Shared anchor log, independent witnesses, human grants, passkey approvals, `verify-pr` CI gate |
+| v0.5 | Key rotation with pre-rotation, revocation, credential broker for short-lived scoped tokens |
+| v0.6 | Cross-agent receipts, A2A agent cards, federation |
 
 ## Background
 

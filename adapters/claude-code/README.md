@@ -54,8 +54,10 @@ transcript self-explaining when you read it back.
 
 If your Claude Code version does not honour that response shape, set
 `PROVENANT_HOOK_MODE=exitcode` to use the exit-code protocol instead: exit 2 with
-the reason on stderr blocks the call. In that mode Provenant cannot express
-`ask`, so escalations are allowed through and recorded as `tool.ask`.
+the reason on stderr blocks the call. That protocol cannot express `ask`, so an
+escalation **blocks** with an approval id and you clear it with
+`provenant approve <id>` in your own terminal — the same flow as Codex and
+OpenCode. (v0.1 let escalations through in this mode; that fail-open is fixed.)
 
 ## Verifying the wiring
 

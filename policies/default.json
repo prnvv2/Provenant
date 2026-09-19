@@ -14,7 +14,7 @@
       "id": "deny-policy-edit",
       "effect": "deny",
       "classes": ["edit.policy"],
-      "reason": "An agent may not edit its own policy or the Provenant store."
+      "reason": "An agent may not change its own guard: editing policy or hook configuration, approving its own actions, or re-running Provenant setup."
     },
     {
       "id": "deny-edit-outside-workspace",

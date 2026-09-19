@@ -1,0 +1,11 @@
+{
+  "session_id": "codex-session-001",
+  "cwd": "/work/repo",
+  "hook_event_name": "PreToolUse",
+  "turn_id": "turn-4",
+  "tool_name": "apply_patch",
+  "tool_use_id": "call_abc125",
+  "tool_input": {
+    "input": "*** Begin Patch\n*** Update File: src/auth.rs\n@@\n-fn old() {}\n+fn new() {}\n*** End Patch\n"
+  }
+}

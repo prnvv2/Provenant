@@ -85,11 +85,58 @@ const DESTRUCTIVE = [
   /^shutdown\b/, /^reboot\b/, /^truncate\s+-s\s*0/,
 ];
 
-/** Read-only tools by name, harness-independent. */
-const READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'NotebookRead', 'LS', 'TodoRead', 'WebSearchLocal']);
-const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'apply_patch', 'ApplyPatch']);
+/**
+ * Tools that do not touch the system: reading, searching, and the harness's own
+ * bookkeeping (todo lists, questions to the user, skill loading, code
+ * intelligence).
+ */
+const READ_TOOLS = new Set([
+  'Read', 'Glob', 'Grep', 'NotebookRead', 'LS', 'TodoRead', 'TodoWrite',
+  'Question', 'Skill', 'LSP', 'WebSearchLocal',
+]);
+const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+const PATCH_TOOLS = new Set(['ApplyPatch']);
 const NET_TOOLS = new Set(['WebFetch', 'WebSearch', 'Fetch']);
 const DELEGATE_TOOLS = new Set(['Task', 'Agent', 'Subagent']);
+const SHELL_TOOLS = new Set(['Bash', 'Shell']);
+
+/**
+ * Harness tool names mapped onto one canonical vocabulary, so the class table
+ * and the policy are written once. Claude Code's names are the canonical set;
+ * OpenCode uses lowercase names and Codex uses its own for exec and patching.
+ */
+const TOOL_ALIASES = new Map([
+  // OpenCode
+  ['bash', 'Bash'],
+  ['read', 'Read'],
+  ['grep', 'Grep'],
+  ['glob', 'Glob'],
+  ['list', 'LS'],
+  ['edit', 'Edit'],
+  ['write', 'Write'],
+  ['patch', 'ApplyPatch'],
+  ['apply_patch', 'ApplyPatch'],
+  ['webfetch', 'WebFetch'],
+  ['websearch', 'WebSearch'],
+  ['task', 'Task'],
+  ['todowrite', 'TodoWrite'],
+  ['todoread', 'TodoRead'],
+  ['question', 'Question'],
+  ['skill', 'Skill'],
+  ['lsp', 'LSP'],
+  // Codex
+  ['shell', 'Shell'],
+  ['exec_command', 'Shell'],
+  ['local_shell', 'Shell'],
+  ['run_command', 'Shell'],
+  ['web_search', 'WebSearch'],
+]);
+
+/** Canonical tool name for any supported harness. */
+export function canonicalTool(tool) {
+  const name = String(tool || '').trim();
+  return TOOL_ALIASES.get(name) ?? name;
+}
 
 /**
  * @param {object} intent
@@ -99,11 +146,12 @@ const DELEGATE_TOOLS = new Set(['Task', 'Agent', 'Subagent']);
  * @returns {{class: string, resource: string, reasons: string[], taintSource?: string}}
  */
 export function classify({ tool, input = {}, cwd = process.cwd() } = {}) {
-  const reasons = [];
-  const name = String(tool || '').trim();
+  const raw = String(tool || '').trim();
+  const name = canonicalTool(raw);
+  input = input && typeof input === 'object' ? input : {};
 
-  if (name.startsWith('mcp__')) {
-    return { class: 'mcp', resource: name, reasons: ['mcp tool'] };
+  if (raw.startsWith('mcp__')) {
+    return { class: 'mcp', resource: raw, reasons: ['mcp tool'] };
   }
 
   if (DELEGATE_TOOLS.has(name)) {
@@ -131,24 +179,93 @@ export function classify({ tool, input = {}, cwd = process.cwd() } = {}) {
   if (EDIT_TOOLS.has(name)) {
     const path = pickPath(input);
     if (!path) return { class: 'edit', resource: name, reasons: ['edit tool, no path'] };
-    if (isPolicyPath(path)) {
-      return { class: 'edit.policy', resource: path, reasons: ['writes Provenant policy or store'] };
-    }
-    if (isSecretPath(path)) {
-      return { class: 'secret.read', resource: path, reasons: ['writes a credential path'] };
-    }
-    if (!isInside(path, cwd)) {
-      return { class: 'edit.outside', resource: path, reasons: ['path is outside the workspace'] };
-    }
-    return { class: 'edit', resource: path, reasons: ['edit inside workspace'] };
+    return classifyWrite(path, cwd);
   }
 
-  if (name === 'Bash' || name === 'Shell' || name === 'shell' || name === 'run_command') {
-    const command = String(input.command ?? input.cmd ?? (Array.isArray(input.command) ? input.command.join(' ') : '') ?? '');
+  if (PATCH_TOOLS.has(name)) {
+    return classifyPatch(patchText(input), cwd);
+  }
+
+  if (SHELL_TOOLS.has(name)) {
+    const command = shellCommand(input);
+    // Codex can route a patch through the shell tool as `apply_patch <<EOF`.
+    if (/^\s*apply_patch\b/.test(command) && command.includes('*** Begin Patch')) {
+      return classifyPatch(command, cwd);
+    }
     return classifyShell(command, cwd);
   }
 
-  return { class: 'unknown', resource: name || 'unknown', reasons: ['unrecognised tool'] };
+  return { class: 'unknown', resource: raw || 'unknown', reasons: ['unrecognised tool'] };
+}
+
+/** Class for writing one path. */
+function classifyWrite(path, cwd) {
+  if (isPolicyPath(path)) {
+    return { class: 'edit.policy', resource: path, reasons: ['writes Provenant policy, store or harness hook config'] };
+  }
+  if (isSecretPath(path)) {
+    return { class: 'secret.read', resource: path, reasons: ['writes a credential path'] };
+  }
+  if (!isInside(path, cwd)) {
+    return { class: 'edit.outside', resource: path, reasons: ['path is outside the workspace'] };
+  }
+  return { class: 'edit', resource: path, reasons: ['edit inside workspace'] };
+}
+
+/**
+ * Classify an apply_patch payload by the most dangerous file it touches.
+ *
+ * The patch format names files in headers (`*** Update File: path`), so a
+ * single patch can edit a source file and a hook config at once. Every header is
+ * checked; the patch is only as safe as its worst target.
+ */
+export function classifyPatch(text, cwd = process.cwd()) {
+  const targets = patchTargets(text);
+  if (targets.length === 0) {
+    return { class: 'edit', resource: 'apply_patch', reasons: ['patch with no file headers'] };
+  }
+  const found = targets.map((p) => classifyWrite(p, cwd));
+  found.sort((a, b) => severity(b.class) - severity(a.class));
+  const worst = found[0];
+  return {
+    class: worst.class,
+    resource: targets.length === 1 ? targets[0] : `${targets.length} files: ${targets.join(', ')}`,
+    reasons: [...worst.reasons, `patch touches ${targets.length} file(s)`],
+  };
+}
+
+/** File paths named by an apply_patch body. */
+export function patchTargets(text) {
+  const out = [];
+  const re = /^\*\*\*\s+(?:Add|Update|Delete)\s+File:\s*(.+?)\s*$|^\*\*\*\s+Move\s+to:\s*(.+?)\s*$/gm;
+  let m;
+  while ((m = re.exec(String(text ?? ''))) !== null) {
+    const p = (m[1] ?? m[2]).trim();
+    if (p && !out.includes(p)) out.push(p);
+  }
+  return out;
+}
+
+function patchText(input) {
+  for (const key of ['patchText', 'patch', 'input', 'content', 'command']) {
+    const v = input[key];
+    if (typeof v === 'string' && v.length > 0) return v;
+  }
+  return '';
+}
+
+/** The command line from any harness's shell tool input. */
+function shellCommand(input) {
+  const v = input.command ?? input.cmd ?? input.commandLine ?? '';
+  if (Array.isArray(v)) {
+    // `["bash", "-lc", "npm test"]`: the payload is the last argument of a
+    // shell wrapper; otherwise join as argv.
+    if (v.length >= 3 && /(^|\/)(ba|z|)sh$|^(bash|sh|zsh|pwsh|powershell|cmd)(\.exe)?$/i.test(v[0]) && /^(-l?c|\/c|-Command)$/i.test(v[1])) {
+      return String(v.slice(2).join(' '));
+    }
+    return v.map(String).join(' ');
+  }
+  return String(v);
 }
 
 /**
@@ -182,8 +299,42 @@ export function classifyShell(command, cwd = process.cwd()) {
   };
 }
 
+/**
+ * Provenant subcommands that change trust state. An agent running these would
+ * be approving its own escalation or resetting the guard, so they are treated
+ * as policy edits. Read-only subcommands (status, log, verify, explain, policy
+ * show, doctor) stay available to the agent.
+ */
+const TRUST_SUBCOMMANDS = /\b(approve|init|checkpoint|hook)\b/;
+
+function isProvenantTrustChange(bare) {
+  // provenant approve …, npx provenant approve …, node …/bin/provenant.js approve …
+  const m = bare.match(/(?:^|[\s"'/\\])provenant(?:\.js|\.cmd|\.ps1)?["']?\s+(\S+)/i);
+  return Boolean(m && TRUST_SUBCOMMANDS.test(m[1]));
+}
+
 function classifySegment(s, cwd) {
   const bare = s.replace(/^\s*(sudo|doas|env\s+\w+=\S+)\s+/, '');
+
+  if (isProvenantTrustChange(bare)) {
+    return {
+      class: 'edit.policy',
+      resource: bare,
+      reasons: ['an agent may not approve its own actions or reconfigure Provenant'],
+    };
+  }
+
+  // Any write target on the line: redirections, and destinations of copy-like
+  // commands. Overwriting hook config through the shell is still a policy edit.
+  for (const target of writeTargets(bare)) {
+    if (isPolicyPath(target)) {
+      return {
+        class: 'edit.policy',
+        resource: bare,
+        reasons: [`writes guard configuration (${target})`],
+      };
+    }
+  }
 
   for (const re of DESTRUCTIVE) {
     if (re.test(bare)) return { class: 'exec.destructive', resource: bare, reasons: ['destructive command'] };
@@ -234,6 +385,21 @@ function classifySegment(s, cwd) {
   }
 
   return { class: 'exec', resource: bare, reasons: ['shell command'] };
+}
+
+/** Paths a command line writes to: `> f`, `>> f`, and cp/mv/tee/install/ln targets. */
+function writeTargets(bare) {
+  const out = [];
+  const redirect = /(?:^|[^0-9&<>])>{1,2}\s*("[^"]+"|'[^']+'|[^\s;|&]+)/g;
+  let m;
+  while ((m = redirect.exec(bare)) !== null) out.push(m[1].replace(/^["']|["']$/g, ''));
+
+  const argv = tokenize(bare);
+  const cmd = (argv[0] || '').replace(/\.exe$/i, '');
+  if (['cp', 'mv', 'tee', 'install', 'ln', 'rsync', 'Copy-Item', 'Move-Item', 'Set-Content', 'Out-File'].includes(cmd)) {
+    for (const a of argv.slice(1)) if (!a.startsWith('-')) out.push(a);
+  }
+  return out;
 }
 
 function classifyGit(argv, bare) {
@@ -362,16 +528,34 @@ export function isSecretPath(path) {
   return SECRET_PATTERNS.some((re) => re.test(p));
 }
 
+/**
+ * Files that configure the guard itself. An agent that could write these could
+ * switch Provenant off, so they are protected in every harness, not only the
+ * one currently running.
+ */
+const POLICY_PATHS = [
+  /(^|\/)\.provenant(\/|$)/, // store, keys, policy
+  /(^|\/)\.claude\/settings(\.local)?\.json$/, // Claude Code hooks
+  /(^|\/)\.codex\/(hooks\.json|config\.toml)$/, // Codex hooks
+  /(^|\/)\.opencode\/plugins?(\/|$)/, // OpenCode plugins
+  /(^|\/)opencode\.jsonc?$/, // OpenCode config and permissions
+  /(^|\/)\.config\/opencode(\/|$)/, // OpenCode global config
+];
+
 export function isPolicyPath(path) {
   const p = expandHome(String(path)).replace(/\\/g, '/');
-  return /(^|\/)\.provenant(\/|$)/.test(p) || /(^|\/)\.claude\/settings(\.local)?\.json$/.test(p);
+  return POLICY_PATHS.some((re) => re.test(p));
 }
 
-/** True when `path` resolves inside `root`. */
+/**
+ * True when `path` resolves inside `root`. Relative paths resolve against the
+ * workspace root, not the process's working directory: a hook process may be
+ * started from anywhere, and patches name files relative to the repo.
+ */
 export function isInside(path, root) {
   try {
-    const p = resolve(expandHome(String(path)));
     const r = resolve(String(root));
+    const p = resolve(r, expandHome(String(path)));
     return p === r || p.startsWith(r.endsWith(sep) ? r : r + sep);
   } catch {
     return false;

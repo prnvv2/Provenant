@@ -4,7 +4,53 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 semantic versioning once it reaches 1.0.
 
-## [0.1.0] — unreleased
+## [0.2.0] — unreleased
+
+### Added
+
+- **Codex adapter.** Hooks for `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
+  `PostToolUse`, `Stop` and `SessionEnd` in `.codex/hooks.json`, with a
+  `commandWindows` entry for Windows. Allowed actions are silent, so Codex's own
+  approval policy and sandbox stay in force.
+- **OpenCode adapter.** `init` generates `.opencode/plugins/provenant.js`, which
+  forwards `tool.execute.before/after`, `chat.message`, `session.idle` and
+  `session.deleted` to Provenant and throws on deny. It fails closed, except for
+  read-only tools, when Provenant cannot be reached.
+- **One-shot human approvals.** Where a harness cannot pause for a human (Codex,
+  OpenCode, Claude Code in exit-code mode), `ask` blocks with an id; the user
+  runs `provenant approve <id>` in their own terminal and the identical action
+  may run once within 10 minutes. The log records ask → approval → action with
+  `cites` links. Approval requires an interactive terminal and a typed id.
+- **Guard self-protection.** `provenant approve`, `init`, `checkpoint` and `hook`
+  run from an agent's shell are `edit.policy`, as are writes to any harness's
+  hook configuration by tool, `apply_patch`, or shell redirection.
+- **`apply_patch` classification** by the most dangerous file the patch names,
+  including patches passed through the shell tool.
+- Tool-name canonicalisation for OpenCode (`bash`, `read`, `webfetch`, …) and
+  Codex (`exec_command`, `shell`, `apply_patch`), and argv-form commands
+  (`["bash", "-lc", "…"]`).
+- `init --harness all`, per-harness `doctor` checks including stale OpenCode
+  plugin paths, and `approval` as an event type.
+
+### Fixed
+
+- **Claude Code exit-code mode failed open on `ask`**: it exited 0 and the action
+  ran. It now blocks with an approval id.
+- Relative paths were resolved against the hook process's directory rather than
+  the workspace, so a relative path in a patch could be judged against the wrong
+  root.
+- An argv-array `command` was joined with commas before classification.
+
+### Known limitations
+
+- The Codex and OpenCode adapters are built from each tool's published
+  documentation and tested with recorded payloads; neither has been run against
+  a live install yet.
+- An approval is signed by the session key, so it proves the ask → approval →
+  action chain and that the agent's shell did not issue it, not which person
+  approved. Passkey-signed approvals are planned.
+
+## [0.1.0] — 2026-09-17
 
 First release: a local policy gate and tamper-evident lineage log for Claude Code.
 

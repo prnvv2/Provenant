@@ -23,6 +23,7 @@ export const EVENT_TYPES = Object.freeze([
   'tool.outcome',
   'tool.denied',
   'tool.ask',
+  'approval',
   'session.end',
 ]);
 
@@ -40,6 +41,7 @@ export const EVENT_TYPES = Object.freeze([
  * @param {object} [args.decision] {effect, policy, reason}
  * @param {object} [args.outcome] {ok, output}
  * @param {object} [args.context] {cwd, git}
+ * @param {string[]} [args.cites] leaf hashes of events this one relies on
  * @param {string} [args.ts] ISO-8601; defaults to now
  * @returns {object}
  */
@@ -55,6 +57,7 @@ export function buildEvent(args) {
     decision,
     outcome,
     context,
+    cites,
     ts = new Date().toISOString(),
   } = args;
 
@@ -83,6 +86,7 @@ export function buildEvent(args) {
   if (decision) body.decision = decision;
   if (outcome) body.outcome = outcome;
   if (context) body.context = context;
+  if (Array.isArray(cites) && cites.length > 0) body.cites = cites;
 
   return body;
 }

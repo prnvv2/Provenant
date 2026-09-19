@@ -1,6 +1,6 @@
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -304,4 +304,22 @@ test('secrets on a command line never reach disk', () => {
   assert.equal(curl.action.redacted, true);
 
   assert.equal(verifySession(session).ok, true);
+});
+
+test('an open session without a checkpoint verifies with a warning, a closed one fails', () => {
+  const open = { harnessSessionId: 'open-unanchored', harness: 'codex', cwd: CWD };
+  startSession(open);
+  const { session: sid } = gateToolCall({ ...open, tool: 'Bash', input: { command: 'npm test' } });
+  const r = verifySession(sid);
+  assert.equal(r.ok, true, 'an open, unanchored session is not a failure');
+  assert.ok(r.checks.some((c) => c.name === 'checkpoint.present' && c.warn));
+
+  // Closing writes a checkpoint; deleting it afterwards is a failure.
+  const closed = { harnessSessionId: 'closed-missing-checkpoint', harness: 'codex', cwd: CWD };
+  startSession(closed);
+  const { session } = endSession(closed);
+  rmSync(paths.checkpoint(session));
+  const c = verifySession(session);
+  assert.equal(c.ok, false);
+  assert.ok(c.failures.some((f) => f.name === 'checkpoint.present'));
 });

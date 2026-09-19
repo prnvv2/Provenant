@@ -1,0 +1,1 @@
+{ "input": { "tool": "read", "sessionID": "ses_oc_001", "callID": "call_2" }, "output": { "args": { "filePath": "/work/repo/.env" } } }

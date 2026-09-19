@@ -1,0 +1,8 @@
+{
+  "session_id": "codex-session-001",
+  "cwd": "/work/repo",
+  "hook_event_name": "Stop",
+  "turn_id": "turn-4",
+  "stop_hook_active": false,
+  "last_assistant_message": "Done."
+}

@@ -12,20 +12,9 @@
  */
 
 import { gateToolCall, recordOutcome, recordPrompt, startSession, endSession } from '../gate.js';
+import { normalize, renderResponse, isErrorResponse, approvalMessage } from './common.js';
 
-/** @param {object} payload raw hook JSON */
-export function normalize(payload = {}) {
-  return {
-    harnessSessionId: payload.session_id ?? payload.sessionId ?? null,
-    cwd: payload.cwd ?? payload.workspace_root ?? process.cwd(),
-    tool: payload.tool_name ?? payload.toolName ?? null,
-    input: payload.tool_input ?? payload.toolInput ?? {},
-    response: payload.tool_response ?? payload.toolResponse ?? undefined,
-    prompt: payload.prompt ?? payload.user_prompt ?? '',
-    reason: payload.reason ?? payload.stop_reason ?? 'stop',
-    model: payload.model?.id ?? payload.model ?? undefined,
-  };
-}
+export { normalize };
 
 /**
  * @param {string} event hook event name
@@ -51,7 +40,15 @@ export function handle(event, payload) {
       if (!p.tool) {
         return { stdout: { continue: true }, exitCode: 0 };
       }
-      const d = gateToolCall({ ...common, tool: p.tool, input: p.input });
+      // The exit-code protocol cannot express "ask", so in that mode an
+      // escalation becomes a block that a human clears with `provenant approve`.
+      const exitcodeMode = process.env.PROVENANT_HOOK_MODE === 'exitcode';
+      const d = gateToolCall({
+        ...common,
+        tool: p.tool,
+        input: p.input,
+        askMode: exitcodeMode ? 'approval' : 'native',
+      });
       return preToolResponse(d);
     }
 
@@ -88,10 +85,11 @@ function preToolResponse(decision) {
   const detail = `${decision.effect === 'deny' ? 'Blocked' : 'Review'} by Provenant [${decision.class}]: ${decision.reason}`;
 
   if (process.env.PROVENANT_HOOK_MODE === 'exitcode') {
-    // Exit code 2 blocks the call and feeds stderr back to the model.
-    return decision.effect === 'deny'
-      ? { stdout: null, exitCode: 2, stderr: detail }
-      : { stdout: null, exitCode: 0 };
+    // Exit code 2 blocks the call and feeds stderr back to the model. An
+    // unapproved `ask` blocks too: letting it through would fail open.
+    if (decision.effect === 'deny') return { stdout: null, exitCode: 2, stderr: detail };
+    if (decision.effect === 'ask') return { stdout: null, exitCode: 2, stderr: approvalMessage(decision) };
+    return { stdout: null, exitCode: 0 };
   }
 
   return {
@@ -114,26 +112,6 @@ function preToolResponse(decision) {
     },
     exitCode: 0,
   };
-}
-
-function renderResponse(response) {
-  if (response === undefined || response === null) return undefined;
-  if (typeof response === 'string') return response;
-  try {
-    return JSON.stringify(response);
-  } catch {
-    return String(response);
-  }
-}
-
-function isErrorResponse(response) {
-  if (!response) return false;
-  if (typeof response === 'object') {
-    if (response.success === false) return true;
-    if (response.is_error === true || response.isError === true) return true;
-    if (typeof response.interrupted === 'boolean' && response.interrupted) return true;
-  }
-  return false;
 }
 
 /** Hook configuration written by `provenant init`. */

@@ -49,7 +49,7 @@ PAE = "DSSEv1" SP len(payloadType) SP payloadType SP len(payload) SP payload
                "reason": "…", "bundle": "sha256:<hex>" },
   "outcome": { "ok": true, "output": "sha256:<hex>", "bytes": 1234 },
   "context": { "harness": "claude-code", "cwd": "…", "policy": "sha256:…" },
-  "cites":   ["sha256:<hex>"]    // reserved: approvals or evidence relied upon
+  "cites":   ["sha256:<hex>"]    // leaf hashes of events this one relies on
 }
 ```
 
@@ -68,6 +68,12 @@ Rules:
   is the exact bytes that ran.
 - `decision.bundle` is the digest of the policy that produced the decision, so a
   verifier can tell which rules were in force.
+- `decision.approval` names the approval request (`apr-<10 hex>`) when a decision
+  went through the approval flow: on the `tool.ask` that opened it, the
+  `approval` that granted it, and the `tool.intent` that used it.
+- `cites` lists leaf hashes this event depends on. An `approval` cites the
+  `tool.ask` it answers; an approved `tool.intent` cites the `approval`. A
+  verifier can follow ask → approval → action through the Merkle log.
 - Unknown fields must be preserved byte-for-byte when re-serialising, because the
   leaf hash covers them. Verifiers must not reject unknown fields.
 
@@ -82,6 +88,7 @@ Rules:
 | `tool.outcome` | a tool call finished | `action`, `outcome` |
 | `tool.denied` | a tool call was refused | `action`, `input`, `decision` |
 | `tool.ask` | a tool call was escalated to a human | `action`, `input`, `decision` |
+| `approval` | a human approved one pending `tool.ask` | `action`, `input`, `decision.approval`, `cites`, `context.method` |
 | `session.end` | session closed | `context.reason` |
 
 ## 4. Merkle commitment
@@ -146,7 +153,8 @@ first event at which the chain breaks, since that locates the tampering.
 
 ## 8. Reserved for later versions
 
-`cites` (approval references), receipts, anchors in a shared log, witness
-cosignatures, key event logs and key-state proofs. See `docs/DESIGN.md`. All are
+Receipts, anchors in a shared log, witness cosignatures, key event logs,
+key-state proofs, and approvals signed by a human key rather than the session
+key. See `docs/DESIGN.md`. All are
 additive: a v1 verifier ignores fields it does not know, but must include them in
 the canonical bytes it hashes.

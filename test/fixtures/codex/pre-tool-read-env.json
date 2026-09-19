@@ -1,0 +1,9 @@
+{
+  "session_id": "codex-session-001",
+  "cwd": "/work/repo",
+  "hook_event_name": "PreToolUse",
+  "turn_id": "turn-3",
+  "tool_name": "Bash",
+  "tool_use_id": "call_abc124",
+  "tool_input": { "command": "cat .env" }
+}

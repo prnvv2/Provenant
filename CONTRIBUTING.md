@@ -38,7 +38,7 @@ npm run vectors                    # regenerate Merkle vectors (needs python3)
 
 - **Classifier and policy:** add a row to the tables in `test/policy.test.js`. That table is the normative description of what each class means, so a new class or command family belongs there first.
 - **Merkle code:** add a vector to `scripts/gen_vectors.py`, regenerate, and let the JS be checked against the Python. Do not write expected hashes by hand.
-- **Harness payloads:** add a real (redacted) payload to `test/fixtures/claude/` and a case in `test/adapter.test.js`. Redact paths, prompts and tokens.
+- **Harness payloads:** add a real (redacted) payload to `test/fixtures/<claude|codex|opencode>/` and a case in `test/adapter.test.js` or `test/harnesses.test.js`. Redact paths, prompts and tokens. The Codex and OpenCode adapters were built from documentation, so **a payload captured from a live run is the single most useful contribution right now**.
 - **Security behaviour:** a test that tampering is detected, or that a bypass is blocked, is worth more than three tests of happy paths.
 
 A bug fix should come with the test that would have caught it. Several bugs found while building v0.1 — a path-with-spaces failure and a BOM on piped stdin — came from exactly these suites.

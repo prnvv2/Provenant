@@ -1,0 +1,1 @@
+{ "input": { "tool": "bash", "sessionID": "ses_oc_001", "callID": "call_1" }, "output": { "args": { "command": "git push origin main", "description": "Push" } } }

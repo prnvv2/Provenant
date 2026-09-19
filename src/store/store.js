@@ -372,7 +372,20 @@ export function verifySession(id, opts = {}) {
   const checkpoint = readCheckpoint(id);
 
   if (!checkpoint) {
-    add('checkpoint.present', false, 'no checkpoint: run `provenant checkpoint`');
+    if (state.endedAt) {
+      // A closed session always has a checkpoint; a missing one was removed.
+      add('checkpoint.present', false, 'no checkpoint for a closed session: it was removed, or never written');
+    } else {
+      // An open session is simply between checkpoints. Its events are still
+      // checked by signature and chain, just not yet against a signed root.
+      const entry = {
+        name: 'checkpoint.present',
+        ok: true,
+        warn: true,
+        detail: 'session still open and not yet checkpointed: verified by signature and chain only (run `provenant checkpoint` to anchor it)',
+      };
+      checks.push(entry);
+    }
   } else {
     const { sig: cpSig, keyid: cpKeyid, ...note } = checkpoint;
     let cpOk = false;

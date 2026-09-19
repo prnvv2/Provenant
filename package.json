@@ -1,7 +1,7 @@
 {
   "name": "provenant",
-  "version": "0.1.0",
-  "description": "Policy gate and tamper-evident lineage log for AI coding agents",
+  "version": "0.2.0",
+  "description": "Policy gate and tamper-evident lineage log for AI coding agents: Claude Code, Codex and OpenCode",
   "type": "module",
   "license": "Apache-2.0",
   "bin": {
@@ -34,6 +34,8 @@
     "merkle",
     "transparency-log",
     "claude-code",
+    "codex",
+    "opencode",
     "nhi",
     "provenance"
   ],

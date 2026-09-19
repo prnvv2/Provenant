@@ -1,0 +1,9 @@
+{
+  "session_id": "codex-session-001",
+  "cwd": "/work/repo",
+  "hook_event_name": "PreToolUse",
+  "turn_id": "turn-4",
+  "tool_name": "exec_command",
+  "tool_use_id": "call_abc126",
+  "tool_input": { "cmd": ["bash", "-lc", "npm test"] }
+}

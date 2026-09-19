@@ -199,15 +199,15 @@ test('cli hook fails closed for a mutating tool when the gate throws', async () 
 
 test('cli rejects an unsupported harness rather than allowing the call', async () => {
   const cap = captureIo('{}');
-  const code = await main(['hook', 'codex', 'pre-tool'], cap.io);
+  const code = await main(['hook', 'cursor', 'pre-tool'], cap.io);
   assert.equal(code, 64);
-  assert.match(cap.stderr, /v0\.1 supports "claude"/);
+  assert.match(cap.stderr, /use claude, codex or opencode/);
 });
 
 test('status, log, verify and policy render without a terminal', async () => {
   const status = captureIo();
   assert.equal(await main(['status'], status.io), 0);
-  assert.match(status.stdout, /provenant 0\.1\.0/);
+  assert.match(status.stdout, /provenant 0\.2\.0/);
   assert.match(status.stdout, /taint\s+external/);
 
   const statusJson = captureIo();
@@ -255,7 +255,7 @@ test('unknown commands and --version behave predictably', async () => {
 
   const ver = captureIo();
   assert.equal(await main(['--version'], ver.io), 0);
-  assert.equal(ver.stdout.trim(), '0.1.0');
+  assert.equal(ver.stdout.trim(), '0.2.0');
 
   const help = captureIo();
   assert.equal(await main([], help.io), 0);
@@ -265,10 +265,10 @@ test('unknown commands and --version behave predictably', async () => {
 test('doctor reports the installation state', async () => {
   const cap = captureIo();
   const code = await main(['doctor'], cap.io);
-  // Hooks are not wired in this temp home, so doctor exits non-zero and says so.
+  // Nothing is wired in this temp home, so doctor exits non-zero and says so.
   assert.equal(code, 1);
   assert.match(cap.stdout, /store at/);
-  assert.match(cap.stderr, /hooks are not wired/);
+  assert.match(cap.stderr, /no agent is wired/);
 });
 
 test('checkpoint writes a signed root and tells the user to copy it', async () => {
