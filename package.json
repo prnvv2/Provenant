@@ -16,6 +16,7 @@
   "scripts": {
     "test": "node --test",
     "bench": "node scripts/bench.js",
+    "demo": "node scripts/demo.js",
     "vectors": "python scripts/gen_vectors.py > spec/vectors/merkle.json"
   },
   "files": [

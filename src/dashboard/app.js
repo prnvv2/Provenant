@@ -184,10 +184,16 @@ function renderSessions(s) {
 
 function renderPolicy(s) {
   const p = s.policy;
+  // Show the file name, not the full path: a path carries the user's name, and
+  // dashboards get screenshotted. The full path is one hover away.
+  const base = p.source ? p.source.split(/[\\/]/).pop() : '';
   const rows = p.error
-    ? [['error', p.error]]
-    : [['name', p.name], ['rules', String(p.rules)], ['digest', `${p.digest.slice(0, 23)}…`], ['file', p.source]];
-  $('policy').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', {}, k), el('dd', { class: k === 'digest' || k === 'file' ? 'mono' : '' }, v)]));
+    ? [['error', p.error, null]]
+    : [['name', p.name, null], ['rules', String(p.rules), null], ['digest', `${p.digest.slice(0, 23)}…`, p.digest], ['file', base, p.source]];
+  $('policy').replaceChildren(...rows.flatMap(([k, v, title]) => [
+    el('dt', {}, k),
+    el('dd', { class: k === 'digest' || k === 'file' ? 'mono' : '', title }, v),
+  ]));
 }
 
 function feedMatches(f) {

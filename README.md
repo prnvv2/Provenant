@@ -14,6 +14,18 @@ It decides before the agent acts, drops its trust once it reads the internet, si
 [![Tests](https://img.shields.io/badge/tests-145-brightgreen.svg)](test/)
 [![Agents](https://img.shields.io/badge/agents-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20OpenCode%20%C2%B7%20Cline-8A63D2.svg)](#install)
 
+**[Install](#install) · [Dashboard](#the-dashboard) · [How it decides](#how-decisions-are-made) · [Approvals](#when-the-agent-needs-you) · [The log](#what-gets-written-down) · [Limitations](#limitations) · [Roadmap](#roadmap)**
+
+<br>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dashboard-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/dashboard-light.png">
+  <img alt="The Provenant dashboard: one card per agent (Claude Code, Codex, OpenCode, Cline) with active sessions, waiting approvals and a 24-hour allowed/asked/denied bar; a Needs you panel listing three blocked commands with Deny and Approve once buttons; a live activity feed; and a sessions list with Pause, Verify and Open." src="docs/assets/dashboard-light.png" width="100%">
+</picture>
+
+<sub>The dashboard running <code>npm run demo</code>: four scripted agents, real decisions, real signatures. A Codex push and deploy and an OpenCode POST wait for a human; the Cline session is paused after a human denied <code>rm -rf migrations/</code>.</sub>
+
 </div>
 
 ---
@@ -28,13 +40,31 @@ Sandboxes and permission prompts help. They can't tell you *which input* caused 
 
 ## What Provenant does
 
-```
-┌─ your agent ─────────┐      ┌─ provenant ───────────────────┐
-│ Bash: git push main  │─────▶│ classify  git.push.protected  │
-└──────────────────────┘      │ taint     external (read web) │
-                              │ policy    ask-protected-push  │──▶ ask / deny / allow
-                              │ sign      ed25519 → merkle    │
-                              └───────────────────────────────┘
+```mermaid
+flowchart LR
+  subgraph agents["Your agents"]
+    CC["Claude Code<br/>hooks"]
+    CX["Codex<br/>hooks"]
+    OC["OpenCode<br/>plugin"]
+    CL["Cline<br/>hook scripts"]
+  end
+
+  subgraph gate["Provenant gate · runs before every tool call"]
+    direction TB
+    C["1 · Classify<br/>git push main → git.push.protected"]
+    T["2 · Taint<br/>read the web? → external"]
+    P["3 · Policy<br/>allow · ask · deny"]
+    S["4 · Sign and log<br/>Ed25519 → Merkle tree"]
+    C --> T --> P --> S
+  end
+
+  CC & CX & OC & CL -->|"tool call"| C
+  P -->|"decision"| agents
+  S --> LOG[("Signed lineage log<br/>~/.provenant")]
+
+  YOU(["You"]) -->|"approve · deny · pause"| DASH["Dashboard + CLI"]
+  DASH -->|"controls"| P
+  LOG -->|"watch · verify"| DASH
 ```
 
 **Three ideas, and nothing else:**
@@ -173,10 +203,11 @@ Conditions: `classes`, `whenTaintAtOrBelow`, `whenTaintAbove`, `resourceMatches`
 ## The dashboard
 
 ```bash
-provenant dashboard
+provenant dashboard          # your real agents
+npm run demo                 # or: four scripted agents in a throwaway store, to try it first
 ```
 
-This opens a local page showing **every agent at once**:
+This opens a local page showing **every agent at once**. The screenshot at the top of this page is `npm run demo`:
 
 - **Agents:** for each of Claude Code, Codex, OpenCode and Cline, how many sessions are active, how many actions are waiting for you, and the last 24 hours of decisions (allowed, asked, denied).
 - **Needs you:** every pending approval, with the exact command and the reason it was stopped. Click **Approve once** or **Deny**.
@@ -211,6 +242,23 @@ Approve this action?
   action    git push origin main
 Type the id (apr-4aca31fde9) to approve, anything else to cancel: apr-4aca31fde9
 ✓ approved apr-4aca31fde9 — the agent can retry now
+```
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as Agent (Codex · OpenCode · Cline)
+  participant P as Provenant
+  participant Y as You
+  A->>P: git push origin main
+  P-->>A: blocked: needs approval apr-4aca31fde9
+  A-->>Y: "Please approve apr-4aca31fde9"
+  Y->>P: Approve once (dashboard) or provenant approve
+  Note over P: approval signed into the log,<br/>citing the request
+  A->>P: git push origin main (retry, identical)
+  P-->>A: allowed, citing the approval
+  A->>P: git push origin main (again)
+  P-->>A: blocked: the approval was single-use
 ```
 
 An approval covers **that exact command, once, for 10 minutes**. The log records the ask, the approval citing it, and the action citing the approval, so the chain verifies.
