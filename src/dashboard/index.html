@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provenant Control</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <span class="word">Provenant</span>
+      <span class="sub" id="machine">control</span>
+    </div>
+    <div class="bar-right">
+      <span class="conn" id="conn" data-state="idle"><span class="dot"></span><span id="conn-text">connecting</span></span>
+      <button class="btn danger" id="pause-all" type="button" hidden>Pause all agents</button>
+    </div>
+  </header>
+
+  <div class="banner" id="paused-banner" hidden>
+    <strong>All agents are paused.</strong>
+    <span>Every action except reading is refused until you resume.</span>
+    <button class="btn" id="resume-all" type="button">Resume all agents</button>
+  </div>
+
+  <main id="app" hidden>
+    <section class="harnesses" id="harnesses" aria-label="Agents"></section>
+
+    <div class="grid">
+      <div class="col-main">
+        <section class="panel" aria-labelledby="needs-h">
+          <div class="panel-head">
+            <h2 id="needs-h">Needs you</h2>
+            <span class="count" id="needs-count">0</span>
+          </div>
+          <div id="approvals"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="feed-h">
+          <div class="panel-head">
+            <h2 id="feed-h">Live activity</h2>
+            <div class="filters">
+              <label class="sr" for="f-harness">Agent</label>
+              <select id="f-harness">
+                <option value="">All agents</option>
+                <option value="claude-code">Claude Code</option>
+                <option value="codex">Codex</option>
+                <option value="opencode">OpenCode</option>
+                <option value="cline">Cline</option>
+              </select>
+              <label class="sr" for="f-effect">Decision</label>
+              <select id="f-effect">
+                <option value="">All decisions</option>
+                <option value="deny">Denied</option>
+                <option value="ask">Asked</option>
+                <option value="allow">Allowed</option>
+              </select>
+              <label class="sr" for="f-text">Search</label>
+              <input id="f-text" type="search" placeholder="Filter commands…" autocomplete="off">
+              <button class="btn ghost" id="feed-freeze" type="button" aria-pressed="false">Freeze</button>
+            </div>
+          </div>
+          <div class="feed-wrap">
+            <table class="feed">
+              <thead><tr><th>Time</th><th>Agent</th><th></th><th>Event</th><th>Class</th><th>Action</th></tr></thead>
+              <tbody id="feed"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <aside class="col-side">
+        <section class="panel" aria-labelledby="sess-h">
+          <div class="panel-head">
+            <h2 id="sess-h">Sessions</h2>
+            <label class="toggle"><input type="checkbox" id="show-closed"> closed</label>
+          </div>
+          <div id="sessions"></div>
+        </section>
+        <section class="panel quiet" aria-labelledby="pol-h">
+          <div class="panel-head"><h2 id="pol-h">Policy</h2></div>
+          <dl class="kv" id="policy"></dl>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <section class="gate" id="no-token" hidden>
+    <h1>Open the dashboard from its link</h1>
+    <p>This page needs the access link printed by <code>provenant dashboard</code> in your terminal. The link carries a one-time token that exists only while that command runs.</p>
+    <p class="muted">If you restarted the dashboard, the old link no longer works. Open the new one.</p>
+  </section>
+
+  <div class="drawer" id="drawer" hidden>
+    <div class="drawer-scrim" data-close></div>
+    <aside class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <div class="drawer-head">
+        <div>
+          <div class="eyebrow" id="drawer-harness"></div>
+          <h2 id="drawer-title"></h2>
+          <div class="muted mono" id="drawer-meta"></div>
+        </div>
+        <button class="btn ghost icon" type="button" data-close aria-label="Close">✕</button>
+      </div>
+      <div class="drawer-actions" id="drawer-actions"></div>
+      <div id="drawer-verify"></div>
+      <div class="feed-wrap tall">
+        <table class="feed"><tbody id="drawer-feed"></tbody></table>
+      </div>
+    </aside>
+  </div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="drawer-scrim" data-cancel></div>
+    <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="modal-title">
+      <h2 id="modal-title"></h2>
+      <div id="modal-body"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" type="button" data-cancel>Cancel</button>
+        <button class="btn" type="button" id="modal-ok"></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+</body>
+</html>

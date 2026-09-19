@@ -88,7 +88,8 @@ Rules:
 | `tool.outcome` | a tool call finished | `action`, `outcome` |
 | `tool.denied` | a tool call was refused | `action`, `input`, `decision` |
 | `tool.ask` | a tool call was escalated to a human | `action`, `input`, `decision` |
-| `approval` | a human approved one pending `tool.ask` | `action`, `input`, `decision.approval`, `cites`, `context.method` |
+| `approval` | a human approved (`decision.effect: allow`) or denied (`deny`) one pending `tool.ask` | `action`, `input`, `decision.approval`, `cites`, `context.method` |
+| `control` | a human paused or resumed this session | `context.action` (`pause`/`resume`), `context.by` |
 | `session.end` | session closed | `context.reason` |
 
 ## 4. Merkle commitment

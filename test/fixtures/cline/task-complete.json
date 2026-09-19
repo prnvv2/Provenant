@@ -1,0 +1,8 @@
+{
+  "clineVersion": "3.36.0",
+  "hookName": "TaskComplete",
+  "timestamp": "1758268809000",
+  "taskId": "cline-task-001",
+  "workspaceRoots": ["/work/repo"],
+  "userId": "user-redacted"
+}

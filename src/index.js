@@ -64,6 +64,7 @@ export {
   endSession,
   checkpointSession,
   approveAction,
+  denyAction,
   listApprovals,
   approvalIdFor,
   APPROVAL_TTL_MS,
@@ -72,4 +73,7 @@ export {
 export * as claudeAdapter from './adapters/claude.js';
 export * as codexAdapter from './adapters/codex.js';
 export * as opencodeAdapter from './adapters/opencode.js';
+export * as clineAdapter from './adapters/cline.js';
+export { readControl, setGlobalPause, setSessionPause, ALLOWED_WHILE_PAUSED } from './control.js';
+export { startDashboard } from './dashboard/server.js';
 export { main as cli, VERSION } from './cli.js';

@@ -130,6 +130,22 @@ const TOOL_ALIASES = new Map([
   ['local_shell', 'Shell'],
   ['run_command', 'Shell'],
   ['web_search', 'WebSearch'],
+  // Cline
+  ['execute_command', 'Shell'],
+  ['read_file', 'Read'],
+  ['write_to_file', 'Write'],
+  ['replace_in_file', 'Edit'],
+  ['search_files', 'Grep'],
+  ['list_files', 'LS'],
+  ['list_code_definition_names', 'LSP'],
+  ['browser_action', 'WebFetch'],
+  ['web_fetch', 'WebFetch'],
+  ['use_mcp_tool', 'MCP'],
+  ['access_mcp_resource', 'MCP'],
+  ['ask_followup_question', 'Question'],
+  ['attempt_completion', 'Question'],
+  ['plan_mode_respond', 'Question'],
+  ['new_task', 'Task'],
 ]);
 
 /** Canonical tool name for any supported harness. */
@@ -154,12 +170,21 @@ export function classify({ tool, input = {}, cwd = process.cwd() } = {}) {
     return { class: 'mcp', resource: raw, reasons: ['mcp tool'] };
   }
 
+  if (name === 'MCP') {
+    // Cline names the server and tool in parameters rather than the tool name.
+    const target = [input.server_name, input.tool_name ?? input.uri].filter(Boolean).join('/');
+    return { class: 'mcp', resource: target || raw, reasons: ['mcp tool'] };
+  }
+
   if (DELEGATE_TOOLS.has(name)) {
     return { class: 'delegate', resource: name, reasons: ['subagent delegation'] };
   }
 
   if (NET_TOOLS.has(name)) {
     const url = String(input.url || input.query || '');
+    if (DASHBOARD_URL.test(url)) {
+      return { class: 'edit.policy', resource: url, reasons: ['an agent may not use the Provenant dashboard'] };
+    }
     return {
       class: 'net.egress',
       resource: url || name,
@@ -305,7 +330,14 @@ export function classifyShell(command, cwd = process.cwd()) {
  * as policy edits. Read-only subcommands (status, log, verify, explain, policy
  * show, doctor) stay available to the agent.
  */
-const TRUST_SUBCOMMANDS = /\b(approve|init|checkpoint|hook)\b/;
+const TRUST_SUBCOMMANDS = /\b(approve|init|checkpoint|hook|dashboard|pause|resume)\b/;
+
+/**
+ * The dashboard's default address. An agent posting to it would be using the
+ * human's control surface; the token already stops that, and this makes the
+ * attempt a visible, denied policy edit as well.
+ */
+const DASHBOARD_URL = /\b(?:127\.0\.0\.1|localhost|\[::1\]):7717\b/i;
 
 function isProvenantTrustChange(bare) {
   // provenant approve …, npx provenant approve …, node …/bin/provenant.js approve …
@@ -321,6 +353,14 @@ function classifySegment(s, cwd) {
       class: 'edit.policy',
       resource: bare,
       reasons: ['an agent may not approve its own actions or reconfigure Provenant'],
+    };
+  }
+
+  if (DASHBOARD_URL.test(bare)) {
+    return {
+      class: 'edit.policy',
+      resource: bare,
+      reasons: ['an agent may not use the Provenant dashboard'],
     };
   }
 
@@ -540,6 +580,8 @@ const POLICY_PATHS = [
   /(^|\/)\.opencode\/plugins?(\/|$)/, // OpenCode plugins
   /(^|\/)opencode\.jsonc?$/, // OpenCode config and permissions
   /(^|\/)\.config\/opencode(\/|$)/, // OpenCode global config
+  /(^|\/)\.clinerules\/hooks(\/|$)/, // Cline project hooks
+  /(^|\/)Cline\/Rules\/Hooks(\/|$)/i, // Cline global hooks
 ];
 
 export function isPolicyPath(path) {

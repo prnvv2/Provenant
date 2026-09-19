@@ -13,6 +13,7 @@ import { redactWithFlag } from './core/redact.js';
 import { classify } from './policy/classify.js';
 import { decide, loadPolicy, lowerTaint } from './policy/engine.js';
 import { appendEvent, loadSession, listSessions, writeCheckpoint } from './store/store.js';
+import { pauseFor, ALLOWED_WHILE_PAUSED } from './control.js';
 import { sessionId } from './core/ids.js';
 
 /** Map a decision effect to the event type that records it. */
@@ -87,8 +88,20 @@ export function gateToolCall({
   const { policy, digest: policyDigest } = loadPolicy(policyFile);
 
   const classification = classify({ tool, input, cwd });
-  const decision = decide({ policy, classification, taint: state.taint });
+  let decision = decide({ policy, classification, taint: state.taint });
   const inputDigest = digestRef(canonicalBytes(input ?? {}));
+
+  // A human pause overrides policy: everything but reading is refused until
+  // the user resumes, whatever the rules would otherwise allow.
+  const pause = pauseFor(state);
+  if (pause && !ALLOWED_WHILE_PAUSED.has(classification.class)) {
+    decision = {
+      effect: 'deny',
+      policy: pause.scope === 'global' ? 'paused-global' : 'paused-session',
+      reason: pause.reason,
+      class: classification.class,
+    };
+  }
 
   // Policy sees the raw command; only what gets recorded is redacted.
   const { resource, redacted } = resourceFor(classification.resource);
@@ -102,6 +115,7 @@ export function gateToolCall({
   // even when a harness runs tool calls in parallel.
   let effective = decision;
   let cited = null;
+  let humanDenied = false;
 
   const record = appendEvent(
     session,
@@ -115,6 +129,15 @@ export function gateToolCall({
             reason: `approved by a human (${approvalId}): ${decision.reason}`,
           };
           cited = a.event;
+        } else if (isStandingDenial(a)) {
+          // The user said no to this exact action; retrying does not reopen it.
+          effective = {
+            ...decision,
+            effect: 'deny',
+            reason: `A human denied this exact action (${approvalId}). Do not retry it; ask the user how to proceed.`,
+          };
+          cited = a.event;
+          humanDenied = true;
         }
       }
       return buildEvent({
@@ -143,7 +166,7 @@ export function gateToolCall({
     // Counts and approval state, updated under the same lock and write.
     (s, rec) => {
       s.counts[effective.effect] = (s.counts[effective.effect] ?? 0) + 1;
-      if (!approvalId) return;
+      if (!approvalId || humanDenied) return;
       s.approvals ??= {};
       if (cited) {
         s.approvals[approvalId].status = 'consumed';
@@ -324,6 +347,13 @@ function isUsableApproval(a, now = Date.now()) {
   );
 }
 
+/** A denial holds for the same window an approval would, then the agent may ask again. */
+function isStandingDenial(a, now = Date.now()) {
+  return Boolean(
+    a && a.status === 'denied' && a.deniedAt && now - Date.parse(a.deniedAt) <= APPROVAL_TTL_MS,
+  );
+}
+
 /** Pending approval requests across all sessions, newest first. */
 export function listApprovals({ includeResolved = false } = {}) {
   const out = [];
@@ -352,11 +382,27 @@ export function listApprovals({ includeResolved = false } = {}) {
  * @param {{method?: string}} [opts]
  */
 export function approveAction(id, { method = 'cli-tty' } = {}) {
+  return resolveApproval(id, 'allow', { method });
+}
+
+/**
+ * Record a human refusal for one pending request. The identical action is then
+ * denied, with the refusal cited, for the approval window; after that the
+ * agent may ask again.
+ */
+export function denyAction(id, { method = 'cli-tty' } = {}) {
+  return resolveApproval(id, 'deny', { method });
+}
+
+function resolveApproval(id, effect, { method }) {
   const owner = listSessions().find((s) => s.approvals?.[id]);
   if (!owner) throw new Error(`no approval request ${id}`);
   const request = owner.approvals[id];
   if (request.status === 'consumed') throw new Error(`${id} was already used`);
-  if (request.status === 'approved' && isUsableApproval(request)) {
+  if (effect === 'allow' && request.status === 'approved' && isUsableApproval(request)) {
+    return { id, session: owner.session, already: true, request };
+  }
+  if (effect === 'deny' && request.status === 'denied' && isStandingDenial(request)) {
     return { id, session: owner.session, already: true, request };
   }
 
@@ -371,18 +417,26 @@ export function approveAction(id, { method = 'cli-tty' } = {}) {
         taint: s.taint,
         action: { class: request.class, tool: request.tool, resource: request.resource },
         input: request.input,
-        decision: { effect: 'allow', policy: 'human-approval', reason: request.reason, approval: id },
+        decision: {
+          effect,
+          policy: effect === 'allow' ? 'human-approval' : 'human-denial',
+          reason: request.reason,
+          approval: id,
+        },
         context: { method },
         cites: [request.requestedBy],
       }),
     (s, rec) => {
-      s.approvals[id].status = 'approved';
-      s.approvals[id].approvedAt = new Date().toISOString();
+      const now = new Date().toISOString();
+      s.approvals[id].status = effect === 'allow' ? 'approved' : 'denied';
+      if (effect === 'allow') s.approvals[id].approvedAt = now;
+      else s.approvals[id].deniedAt = now;
       s.approvals[id].event = rec.leafRef;
+      s.approvals[id].method = method;
     },
   );
 
-  return { id, session: owner.session, event: record.leafRef, request };
+  return { id, session: owner.session, event: record.leafRef, request, effect };
 }
 
 /**

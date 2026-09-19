@@ -24,6 +24,7 @@ export const EVENT_TYPES = Object.freeze([
   'tool.denied',
   'tool.ask',
   'approval',
+  'control',
   'session.end',
 ]);
 

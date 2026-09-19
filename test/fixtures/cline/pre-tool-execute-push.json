@@ -1,0 +1,12 @@
+{
+  "clineVersion": "3.36.0",
+  "hookName": "PreToolUse",
+  "timestamp": "1758268801000",
+  "taskId": "cline-task-001",
+  "workspaceRoots": ["/work/repo"],
+  "userId": "user-redacted",
+  "preToolUse": {
+    "toolName": "execute_command",
+    "parameters": { "command": "git push origin main", "requires_approval": "true" }
+  }
+}

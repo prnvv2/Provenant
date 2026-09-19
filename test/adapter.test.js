@@ -207,7 +207,7 @@ test('cli rejects an unsupported harness rather than allowing the call', async (
 test('status, log, verify and policy render without a terminal', async () => {
   const status = captureIo();
   assert.equal(await main(['status'], status.io), 0);
-  assert.match(status.stdout, /provenant 0\.2\.0/);
+  assert.match(status.stdout, /provenant 0\.3\.0/);
   assert.match(status.stdout, /taint\s+external/);
 
   const statusJson = captureIo();
@@ -255,7 +255,7 @@ test('unknown commands and --version behave predictably', async () => {
 
   const ver = captureIo();
   assert.equal(await main(['--version'], ver.io), 0);
-  assert.equal(ver.stdout.trim(), '0.2.0');
+  assert.equal(ver.stdout.trim(), '0.3.0');
 
   const help = captureIo();
   assert.equal(await main([], help.io), 0);

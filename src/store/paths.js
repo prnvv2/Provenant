@@ -8,7 +8,9 @@
  *   ├── sessions/<id>/events.jsonl   append-only, one DSSE envelope per line
  *   ├── sessions/<id>/state.json     seq, taint, parent leaf, session key
  *   ├── checkpoints/<id>.json        signed root for that session
- *   └── checkpoints/roots.jsonl      append-only roots: copy this off-box
+ *   ├── checkpoints/roots.jsonl      append-only roots: copy this off-box
+ *   ├── control.json                 global pause state, set from the dashboard
+ *   └── control.jsonl                signed, append-only record of control changes
  */
 
 import { homedir } from 'node:os';
@@ -31,5 +33,7 @@ export const paths = {
   checkpointDir: () => join(home(), 'checkpoints'),
   checkpoint: (id) => join(home(), 'checkpoints', `${id}.json`),
   roots: () => join(home(), 'checkpoints', 'roots.jsonl'),
+  control: () => join(home(), 'control.json'),
+  controlLog: () => join(home(), 'control.jsonl'),
   log: () => join(home(), 'provenant.log'),
 };

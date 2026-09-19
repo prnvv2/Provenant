@@ -6,7 +6,7 @@
  * open door.
  */
 
-import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
@@ -28,25 +28,31 @@ import { classify } from './policy/classify.js';
 import * as claude from './adapters/claude.js';
 import * as codex from './adapters/codex.js';
 import * as opencode from './adapters/opencode.js';
+import * as cline from './adapters/cline.js';
 import { normalize } from './adapters/common.js';
 import { approveAction, listApprovals, APPROVAL_TTL_MS } from './gate.js';
+import { setGlobalPause, setSessionPause, readControl } from './control.js';
 
-export const VERSION = '0.2.0';
+export const VERSION = '0.3.0';
 
 /** Hook adapters by the name used on the command line: `provenant hook <name> <event>`. */
-const ADAPTERS = { claude, codex, opencode };
+const ADAPTERS = { claude, codex, opencode, cline };
 
 /** Harness names accepted by `init --harness`. */
-const HARNESSES = ['claude-code', 'codex', 'opencode'];
+const HARNESSES = ['claude-code', 'codex', 'opencode', 'cline'];
 
 const USAGE = `provenant ${VERSION} — policy gate and lineage log for AI coding agents
 
 usage: provenant <command> [options]
 
-  init [--harness claude-code,codex,opencode|all] [--global] [--force]
+  init [--harness claude-code,codex,opencode,cline|all] [--global] [--force]
                        create the store, install the default policy, wire hooks
   approve [<id>]       list actions waiting for human approval, or approve one
                        (interactive terminal only; an agent cannot approve)
+  dashboard [--port 7717] [--no-open]
+                       local web dashboard: monitor and control every agent
+  pause [--session <id>]   refuse every action except reads, everywhere or in one session
+  resume [--session <id>]  lift a pause
   status [--json]      identity, active policy, current session, taint
   log [--session <id>|current|all] [--json] [--limit N]
                        readable lineage for a session
@@ -58,7 +64,7 @@ usage: provenant <command> [options]
                        show the active policy, or test one action against it
   explain --tool <name> [--input <json>] [--cwd <dir>]
                        show how an action would be classified and decided
-  hook <claude|codex|opencode> <event>
+  hook <claude|codex|opencode|cline> <event>
                        hook entry point (reads JSON on stdin)
   doctor               check the installation
   help | --version
@@ -112,6 +118,11 @@ export async function main(argv = process.argv.slice(2), io = defaultIo()) {
         return cmdHook(rest, flags, io);
       case 'approve':
         return await cmdApprove(rest, flags, io);
+      case 'pause':
+      case 'resume':
+        return cmdPause(command === 'pause', flags, io);
+      case 'dashboard':
+        return await cmdDashboard(flags, io);
       case 'doctor':
         return cmdDoctor(io);
 
@@ -157,9 +168,9 @@ function cmdInit(flags, io) {
     }
   }
 
-  if (harnesses.includes('codex') || harnesses.includes('opencode')) {
+  if (harnesses.some((h) => h !== 'claude-code')) {
     io.out(
-      '\nIn Codex and OpenCode an action that needs your approval is blocked with an id.\n' +
+      '\nIn Codex, OpenCode and Cline an action that needs your approval is blocked with an id.\n' +
         'Run `provenant approve <id>` in your own terminal, then let the agent retry.',
     );
   }
@@ -180,6 +191,9 @@ function harnessTarget(harness, global) {
       return global
         ? join(home, '.config', 'opencode', 'plugins', 'provenant.js')
         : join(cwd, '.opencode', 'plugins', 'provenant.js');
+    case 'cline':
+      // A directory: Cline runs one executable per hook, named after the event.
+      return global ? join(home, 'Documents', 'Cline', 'Rules', 'Hooks') : join(cwd, '.clinerules', 'hooks');
     default:
       return null;
   }
@@ -196,7 +210,49 @@ function installHarness(harness, flags) {
   if (harness === 'codex') {
     return installHookFile(target, codex.hookConfig('provenant'), 'hook codex', 'Codex', flags);
   }
+  if (harness === 'cline') return installClineHooks(target);
   return installOpenCodePlugin(target);
+}
+
+/**
+ * Write one executable hook script per Cline event. Scripts that Provenant did
+ * not write are never overwritten.
+ */
+function installClineHooks(dir) {
+  const bin = fileURLToPath(new URL('../bin/provenant.js', import.meta.url));
+  mkdirSync(dir, { recursive: true });
+  let written = 0;
+  const foreign = [];
+  for (const [file, event] of Object.entries(cline.HOOK_FILES)) {
+    const target = join(dir, file);
+    const source = cline.hookScript({ node: process.execPath, bin, event });
+    if (existsSync(target)) {
+      const current = readFileSync(target, 'utf8');
+      if (current === source) continue;
+      if (!current.includes('generated by `provenant init --harness cline`')) {
+        foreign.push(file);
+        continue;
+      }
+    }
+    writeFileSync(target, source, { mode: 0o755 });
+    try {
+      chmodSync(target, 0o755);
+    } catch {
+      // chmod is a no-op on Windows; Cline documents hooks for macOS and Linux.
+    }
+    written += 1;
+  }
+  const lines = [written > 0 ? `✓ installed ${written} Cline hook(s) in ${dir}` : `· Cline hooks already current in ${dir}`];
+  if (foreign.includes('PreToolUse')) {
+    // Without PreToolUse nothing is gated: that is a failed install, not a note.
+    return {
+      ok: false,
+      message: `! ${join(dir, 'PreToolUse')} exists and was not written by Provenant; not overwritten, so Cline is NOT gated`,
+    };
+  }
+  if (foreign.length > 0) lines.push(`  ! left your existing ${foreign.join(', ')} untouched; Provenant does not see those events`);
+  if (process.platform === 'win32') lines.push('  ! Cline documents hooks for macOS and Linux only; on Windows they may not run');
+  return { ok: true, message: lines.join('\n') };
 }
 
 /**
@@ -532,12 +588,13 @@ function hookFailure(harness, event, payload, err, io) {
     io.err(`provenant: ${event} hook failed: ${err.message}`);
     // OpenCode's plugin reads a JSON reply for every event.
     if (harness === 'opencode') io.out(JSON.stringify({ ok: false, error: err.message }));
+    if (harness === 'cline') io.out(JSON.stringify({ cancel: false }));
     return 0;
   }
 
   let cls = 'unknown';
   try {
-    const p = normalize(payload);
+    const p = harness === 'cline' ? cline.normalize(payload) : normalize(payload);
     cls = classify({ tool: p.tool, input: p.input, cwd: p.cwd }).class;
   } catch {
     cls = 'unknown';
@@ -551,6 +608,7 @@ function hookFailure(harness, event, payload, err, io) {
   io.err(`provenant: gate unavailable (${err.message}); allowing ${cls}`);
   if (harness === 'claude') io.out(JSON.stringify({ continue: true }));
   if (harness === 'opencode') io.out(JSON.stringify({ decision: 'allow' }));
+  if (harness === 'cline') io.out(JSON.stringify({ cancel: false }));
   return 0;
 }
 
@@ -559,6 +617,10 @@ function emitDeny(harness, reason, io) {
   const text = `Provenant: ${reason}`;
   if (harness === 'opencode') {
     io.out(JSON.stringify({ decision: 'deny', reason: text }));
+    return 0;
+  }
+  if (harness === 'cline') {
+    io.out(JSON.stringify({ cancel: true, errorMessage: text, contextModification: text }));
     return 0;
   }
   io.out(
@@ -571,6 +633,73 @@ function emitDeny(harness, reason, io) {
     }),
   );
   return 0;
+}
+
+/* ------------------------------------------------------------ pause/resume */
+
+function cmdPause(paused, flags, io) {
+  if (flags.session) {
+    const id = resolveSession(flags.session);
+    const r = setSessionPause(id, paused, { by: 'cli' });
+    if (!r.changed) io.out(`· ${id} is already ${paused ? 'paused' : 'running'}`);
+    else io.out(paused ? `⏸ paused ${id}: only reads are allowed until you resume it` : `▶ resumed ${id}`);
+    return 0;
+  }
+  const before = readControl();
+  if (before.paused === paused) {
+    io.out(`· agents are already ${paused ? 'paused' : 'running'}`);
+    return 0;
+  }
+  setGlobalPause(paused, { by: 'cli' });
+  io.out(paused ? '⏸ paused every agent: only reads are allowed until you run `provenant resume`' : '▶ resumed every agent');
+  return 0;
+}
+
+/* --------------------------------------------------------------- dashboard */
+
+async function cmdDashboard(flags, io) {
+  loadConfig(); // fail early, with the usual message, if there is no store
+  const { startDashboard } = await import('./dashboard/server.js');
+  const port = flags.port === undefined ? 7717 : Number(flags.port);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    io.err('--port must be a number between 0 and 65535');
+    return 64;
+  }
+
+  const dash = await startDashboard({ port });
+  io.out(`Provenant dashboard on ${dash.origin}`);
+  io.out('');
+  io.out(`  Open: ${dash.url}`);
+  io.out('');
+  io.out('  That link carries a one-time access token. It lives only in this process');
+  io.out('  and is never written to disk; anyone with the link can control your agents,');
+  io.out('  so do not paste it into an agent or share it. Press Ctrl+C to stop.');
+  if (!flags['no-open']) openBrowser(dash.url);
+
+  await new Promise((resolve) => {
+    const stop = () => dash.close().then(resolve);
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
+    if (process.platform === 'win32') process.once('SIGBREAK', stop); // Ctrl+Break
+  });
+  io.out('dashboard stopped');
+  return 0;
+}
+
+function openBrowser(url) {
+  const [cmd, args] =
+    process.platform === 'win32'
+      ? ['cmd', ['/c', 'start', '""', url]]
+      : process.platform === 'darwin'
+        ? ['open', [url]]
+        : ['xdg-open', [url]];
+  import('node:child_process')
+    .then(({ spawn }) => {
+      const child = spawn(cmd, args, { stdio: 'ignore', detached: true, windowsHide: true, windowsVerbatimArguments: process.platform === 'win32' });
+      child.on('error', () => {});
+      child.unref();
+    })
+    .catch(() => {});
 }
 
 /* ----------------------------------------------------------------- approve */
@@ -669,11 +798,14 @@ function cmdDoctor(io) {
     'claude-code': 'provenant hook claude',
     codex: 'provenant hook codex',
     opencode: 'generated by `provenant init --harness opencode`',
+    cline: 'generated by `provenant init --harness cline`',
   };
   const notes = [];
   let wiredCount = 0;
   for (const harness of HARNESSES) {
-    const files = [harnessTarget(harness, false), harnessTarget(harness, true)];
+    const files = [harnessTarget(harness, false), harnessTarget(harness, true)].map((f) =>
+      harness === 'cline' ? join(f, 'PreToolUse') : f,
+    );
     const wired = files.filter((f) => existsSync(f) && readFileSync(f, 'utf8').includes(markers[harness]));
     if (wired.length > 0) {
       wiredCount += 1;
@@ -694,7 +826,7 @@ function cmdDoctor(io) {
     }
   }
   if (wiredCount === 0) {
-    problems.push('no agent is wired — run `provenant init --harness claude-code,codex,opencode`');
+    problems.push('no agent is wired — run `provenant init --harness all`');
   }
 
   for (const line of ok) io.out(`✓ ${line}`);

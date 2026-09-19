@@ -4,15 +4,15 @@
 
 ### Your coding agent runs as you. Provenant makes it prove what it did.
 
-A **policy gate** and **tamper-evident lineage log** for AI coding agents — **Claude Code, Codex and OpenCode**.
-It decides before the agent acts, drops its trust once it reads the internet, and signs a record you can verify offline.
+A **policy gate**, **tamper-evident lineage log** and **control dashboard** for AI coding agents — **Claude Code, Codex, OpenCode and Cline**.
+It decides before the agent acts, drops its trust once it reads the internet, signs a record you can verify offline, and gives you one screen to watch and stop every agent.
 
 [![CI](https://github.com/prnvv2/Provenant/actions/workflows/ci.yml/badge.svg)](https://github.com/prnvv2/Provenant/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522-5FA04E.svg)](package.json)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
-[![Tests](https://img.shields.io/badge/tests-119-brightgreen.svg)](test/)
-[![Agents](https://img.shields.io/badge/agents-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20OpenCode-8A63D2.svg)](#install)
+[![Tests](https://img.shields.io/badge/tests-145-brightgreen.svg)](test/)
+[![Agents](https://img.shields.io/badge/agents-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20OpenCode%20%C2%B7%20Cline-8A63D2.svg)](#install)
 
 </div>
 
@@ -92,7 +92,8 @@ Then, in each repo you work in, wire up the agents you use:
 provenant init --harness claude-code       # .claude/settings.json
 provenant init --harness codex             # .codex/hooks.json
 provenant init --harness opencode          # .opencode/plugins/provenant.js
-provenant init --harness all               # all three
+provenant init --harness cline             # .clinerules/hooks/
+provenant init --harness all               # all four
 provenant doctor                           # check what's wired
 ```
 
@@ -102,15 +103,19 @@ Add `--global` to protect every repo instead. Existing config is backed up befor
 |---|---|---|
 | **Claude Code** | hook commands | Claude Code's own permission prompt |
 | **Codex** | hook commands | blocks with an id → you run `provenant approve <id>` |
-| **OpenCode** | generated plugin | blocks with an id → you run `provenant approve <id>` |
+| **OpenCode** | generated plugin | blocks with an id → you approve in the dashboard or with `provenant approve <id>` |
+| **Cline** | hook scripts (macOS/Linux) | blocks with an id → you approve in the dashboard or with `provenant approve <id>` |
 
-Then use your agent normally. Provenant stays invisible until it blocks or asks. Per-agent details: [Claude Code](adapters/claude-code/README.md) · [Codex](adapters/codex/README.md) · [OpenCode](adapters/opencode/README.md).
+Then use your agent normally. Provenant stays invisible until it blocks or asks. Per-agent details: [Claude Code](adapters/claude-code/README.md) · [Codex](adapters/codex/README.md) · [OpenCode](adapters/opencode/README.md) · [Cline](adapters/cline/README.md).
 
-> **Status: v0.2.** Local only, no server. Honest about its edges — read [Limitations](#limitations) before you rely on it.
+> **Status: v0.3.** Local only, no server beyond the loopback dashboard. Honest about its edges — read [Limitations](#limitations) before you rely on it.
 
 ## Commands
 
 ```bash
+provenant dashboard         # one screen for every agent: watch, approve, deny, pause
+provenant pause             # refuse everything but reads, in every agent  (--session <id> for one)
+provenant resume
 provenant approve           # actions waiting for you;  `provenant approve <id>` to approve one
 provenant status            # identity, policy, current session, taint, decision counts
 provenant log              # readable lineage  (--session all, --json, --limit N)
@@ -165,9 +170,34 @@ sudo rm -rf /var                     →  exec.destructive (not "sudo")
 
 Conditions: `classes`, `whenTaintAtOrBelow`, `whenTaintAbove`, `resourceMatches`, `resourceNotMatches`. Effects: `allow`, `ask`, `deny`. A malformed policy **throws** — it never silently widens permissions. The policy digest is recorded in every event, so a log says which rules were in force.
 
+## The dashboard
+
+```bash
+provenant dashboard
+```
+
+This opens a local page showing **every agent at once**:
+
+- **Agents:** for each of Claude Code, Codex, OpenCode and Cline, how many sessions are active, how many actions are waiting for you, and the last 24 hours of decisions (allowed, asked, denied).
+- **Needs you:** every pending approval, with the exact command and the reason it was stopped. Click **Approve once** or **Deny**.
+- **Live activity:** a feed of decisions across all agents. Filter by agent, by decision or by command text, and freeze it to read.
+- **Sessions:** each session's trust level and counts. Buttons let you **Pause** it, **Verify** its log, or open the full timeline.
+- **Pause all agents:** one switch that makes every agent, in every harness, refuse everything except reads until you resume.
+
+Nothing about it is special: approve, deny, pause and verify are also CLI commands, and every action you take is written to the signed log.
+
+**It's built to be safe against the agents it controls.**
+- It only listens on `127.0.0.1`.
+- It uses a random access token that lives only in memory. The token reaches your browser in the link's `#fragment`, which is never sent to a server.
+- It checks the Host and Origin headers and serves a strict Content Security Policy.
+- It renders all agent output as plain text.
+- Agents can't start it or call its API; both are denied as policy edits.
+
+Don't paste the link anywhere. Anyone holding it can control your agents until you stop the dashboard. The full security model is in [ADR-0007](docs/adr/0007-dashboard-and-controls.md).
+
 ## When the agent needs you
 
-Claude Code can pause mid-action and ask you, so Provenant hands `ask` to its prompt. Codex and OpenCode can't: Codex treats `ask` as a failed hook and **runs the action anyway**, and OpenCode's hook can only block. Mapping `ask` onto them naively would fail open. So there, Provenant blocks and hands you an id:
+Claude Code can pause mid-action and ask you, so Provenant hands `ask` to its prompt. Codex, OpenCode and Cline can't: Codex treats `ask` as a failed hook and **runs the action anyway**, and OpenCode's and Cline's hooks can only block. Mapping `ask` onto them naively would fail open. So there, Provenant blocks and hands you an id. Approve it in the dashboard, or in a terminal:
 
 ```console
 # the agent sees:
@@ -185,7 +215,7 @@ Type the id (apr-4aca31fde9) to approve, anything else to cancel: apr-4aca31fde9
 
 An approval covers **that exact command, once, for 10 minutes**. The log records the ask, the approval citing it, and the action citing the approval, so the chain verifies.
 
-**The agent can't approve itself.** `provenant approve` run through its shell is denied as a policy edit, and approval refuses to run without an interactive terminal, which agent shells never have. Editing any agent's hook config (`.claude/settings.json`, `.codex/hooks.json`, `.opencode/plugins/`, `opencode.json`) is denied too, by tool, by patch or by shell redirect, so it can't switch the guard off either.
+**The agent can't approve itself.** `provenant approve` run through its shell is denied as a policy edit, and approval refuses to run without an interactive terminal, which agent shells never have. Editing any agent's hook config (`.claude/settings.json`, `.codex/hooks.json`, `.opencode/plugins/`, `opencode.json`, `.clinerules/hooks/`) is denied too, by tool, by patch or by shell redirect, so it can't switch the guard off either.
 
 ## What gets written down
 
@@ -239,9 +269,11 @@ v0.1 is small on purpose. What it does *not* do:
 
 - 🔓 **It detects log tampering; it does not prevent it.** The CLI runs as your user, so the agent can reach the key and the files. Detection is only reliable against a root kept where the agent cannot write — `provenant checkpoint` appends every root to `~/.provenant/checkpoints/roots.jsonl`; copy that off the machine or into CI. Real isolation needs the v0.2 daemon running as a separate user. ([ADR-0003](docs/adr/0003-key-custody-v01.md))
 - 👁 **Only what the hooks see.** A process spawned outside the harness is not gated.
-- 🧪 **Codex and OpenCode adapters haven't been run against live installs yet.** They're built from each tool's published docs and tested with recorded payloads, and the OpenCode plugin runs end to end under Node. The first real-world mismatch should become a test fixture — please report it.
+- 🧪 **The Codex, OpenCode and Cline adapters haven't been run against live installs yet.** They're built from each tool's published docs and tested with recorded payloads, and the OpenCode plugin runs end to end under Node. The first real-world mismatch should become a test fixture — please report it.
 - 🎣 **It does not detect prompt injection.** It limits what a session may do after reading untrusted content.
-- ✍️ **Approvals prove the chain, not the person.** An approval is tied to one exact action and can't come from the agent's shell, but it's signed by the session key, not by you. Passkey-signed approvals are v0.3.
+- 🪟 **Cline hooks are macOS/Linux only**, per Cline's own documentation.
+- 🔑 **The dashboard link is a bearer credential.** Anyone who has it controls your agents while the dashboard runs.
+- ✍️ **Approvals prove the chain, not the person.** An approval is tied to one exact action and can't come from the agent's shell, but it's signed by the session key, not by you. Passkey-signed approvals are v0.5.
 - 🐚 **The shell classifier is a tokeniser, not a shell.** Deliberately pessimistic, but a creative command line can slip past — [report it](https://github.com/prnvv2/Provenant/issues/new?template=classifier-bug.md), that's the most useful contribution right now.
 
 ## Performance
@@ -258,7 +290,7 @@ The gap is Node's process start (~80 ms here), paid once per tool call. The Open
 ## Development
 
 ```bash
-node --test          # 119 tests, no install step
+node --test          # 145 tests, no install step
 npm run bench        # latency
 npm run vectors      # regenerate Merkle vectors from the Python reference
 ```
@@ -271,7 +303,9 @@ src/merkle/    RFC 6962 tree: root, inclusion and consistency proofs
 src/policy/    action classifier, rules engine, taint lattice
 src/store/     append-only JSONL, session state, checkpoints, verification
 src/gate.js    classify → decide → record: the only place decisions happen
-src/adapters/  claude.js, codex.js, opencode.js (+ the generated plugin)
+src/adapters/  claude.js, codex.js, opencode.js, cline.js (+ generated plugin and hook scripts)
+src/control.js pause and resume, globally and per session
+src/dashboard/ loopback control server and a zero-dependency UI
 ```
 
 📎 [**Spec**](spec/event-v1.md) — event format, hashing, verification rules, so another implementation can read these logs
@@ -284,11 +318,12 @@ src/adapters/  claude.js, codex.js, opencode.js (+ the generated plugin)
 | | |
 |---|---|
 | v0.1 | Claude Code gate, taint, signed Merkle log, verification, redaction |
-| **v0.2** ← you are here | **Codex and OpenCode**, one-shot human approvals, guard self-protection |
-| v0.3 | Daemon with OS-user isolation, compiled hook client, context ledger |
-| v0.4 | Shared anchor log, independent witnesses, human grants, passkey approvals, `verify-pr` CI gate |
-| v0.5 | Key rotation with pre-rotation, revocation, credential broker for short-lived scoped tokens |
-| v0.6 | Cross-agent receipts, A2A agent cards, federation |
+| v0.2 | Codex and OpenCode, one-shot human approvals, guard self-protection |
+| **v0.3** ← you are here | **Cline**, **control dashboard**, pause/resume, human denials |
+| v0.4 | Daemon with OS-user isolation, compiled hook client, context ledger |
+| v0.5 | Shared anchor log, independent witnesses, human grants, passkey approvals, `verify-pr` CI gate |
+| v0.6 | Key rotation with pre-rotation, revocation, credential broker for short-lived scoped tokens |
+| v0.7 | Cross-agent receipts, A2A agent cards, federation |
 
 ## Background
 

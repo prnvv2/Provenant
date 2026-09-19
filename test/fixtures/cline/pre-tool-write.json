@@ -1,0 +1,9 @@
+{
+  "clineVersion": "3.36.0",
+  "hookName": "PreToolUse",
+  "timestamp": "1758268803000",
+  "taskId": "cline-task-001",
+  "workspaceRoots": ["/work/repo"],
+  "userId": "user-redacted",
+  "preToolUse": { "toolName": "write_to_file", "parameters": { "path": "src/app.ts", "content": "export {}" } }
+}

@@ -358,3 +358,62 @@ test('overwriting hook config through the shell is a policy edit', () => {
   // ordinary redirections are not affected
   assert.equal(classifyShell('npm test > test-output.txt', CWD).class, 'exec.test');
 });
+
+/* ------------------------------------------------------------------ Cline */
+
+test('Cline tool names classify like their equivalents', () => {
+  const cases = [
+    { tool: 'execute_command', input: { command: 'npm test' }, expect: 'exec.test' },
+    { tool: 'execute_command', input: { command: 'git push origin main' }, expect: 'git.push.protected' },
+    { tool: 'read_file', input: { path: 'src/a.ts' }, expect: 'read' },
+    { tool: 'read_file', input: { path: '.env' }, expect: 'secret.read' },
+    { tool: 'write_to_file', input: { path: 'src/a.ts', content: 'x' }, expect: 'edit' },
+    { tool: 'write_to_file', input: { path: '/etc/hosts', content: 'x' }, expect: 'edit.outside' },
+    { tool: 'replace_in_file', input: { path: 'src/a.ts', diff: 'x' }, expect: 'edit' },
+    { tool: 'search_files', input: { path: 'src', regex: 'TODO' }, expect: 'read' },
+    { tool: 'list_files', input: { path: 'src' }, expect: 'read' },
+    { tool: 'list_code_definition_names', input: { path: 'src' }, expect: 'read' },
+    { tool: 'web_fetch', input: { url: 'https://example.com' }, expect: 'net.egress' },
+    { tool: 'browser_action', input: { action: 'launch', url: 'https://example.com' }, expect: 'net.egress' },
+    { tool: 'use_mcp_tool', input: { server_name: 'github', tool_name: 'create_issue' }, expect: 'mcp' },
+    { tool: 'ask_followup_question', input: { question: '?' }, expect: 'read' },
+    { tool: 'attempt_completion', input: { result: 'done' }, expect: 'read' },
+    { tool: 'new_task', input: {}, expect: 'delegate' },
+  ];
+  for (const c of cases) {
+    const got = classify({ tool: c.tool, input: c.input, cwd: CWD });
+    assert.equal(got.class, c.expect, `${c.tool} ${JSON.stringify(c.input)} → ${got.class}`);
+  }
+  assert.equal(
+    classify({ tool: 'use_mcp_tool', input: { server_name: 'github', tool_name: 'create_issue' }, cwd: CWD }).resource,
+    'github/create_issue',
+  );
+});
+
+test('Cline hook scripts are guard configuration', () => {
+  assert.equal(classify({ tool: 'write_to_file', input: { path: '.clinerules/hooks/PreToolUse' }, cwd: CWD }).class, 'edit.policy');
+  assert.equal(classify({ tool: 'Write', input: { file_path: '~/Documents/Cline/Rules/Hooks/PreToolUse' }, cwd: CWD }).class, 'edit.policy');
+  assert.equal(classifyShell('echo exit 0 > .clinerules/hooks/PreToolUse', CWD).class, 'edit.policy');
+  // ordinary Cline rules are just files
+  assert.equal(classify({ tool: 'write_to_file', input: { path: '.clinerules/style.md' }, cwd: CWD }).class, 'edit');
+});
+
+/* -------------------------------------------------------------- dashboard */
+
+test('an agent cannot start, pause, resume or call the dashboard', () => {
+  for (const command of [
+    'provenant dashboard',
+    'provenant dashboard --port 9000 --no-open',
+    'provenant resume',
+    'provenant pause --session sess-123',
+    'curl -X POST http://127.0.0.1:7717/api/control/resume',
+    'curl -H "X-Provenant-Token: x" http://localhost:7717/api/approvals/apr-1234567890/approve',
+  ]) {
+    assert.equal(classifyShell(command, CWD).class, 'edit.policy', command);
+  }
+  assert.equal(classify({ tool: 'WebFetch', input: { url: 'http://127.0.0.1:7717/api/state' }, cwd: CWD }).class, 'edit.policy');
+  assert.equal(classify({ tool: 'webfetch', input: { url: 'http://localhost:7717/' }, cwd: CWD }).class, 'edit.policy');
+  // other local services are ordinary traffic
+  assert.equal(classifyShell('curl http://localhost:3000/api/users', CWD).class, 'net.egress');
+  assert.equal(classifyShell('curl http://127.0.0.1:17717/', CWD).class, 'net.egress');
+});
